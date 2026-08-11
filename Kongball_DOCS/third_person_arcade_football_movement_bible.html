@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Third-Person Arcade Football — Movement Bible v1.0</title>
+<style>
+:root{--bg:#0b0d10;--panel:#12161b;--panel2:#171c22;--text:#eef2f5;--muted:#9aa5af;--accent:#79e08b;--accent2:#5fc8ff;--line:#27303a;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55}a{color:var(--accent2)}.wrap{max-width:1180px;margin:auto;padding:48px 24px 100px}.hero{padding:48px;border:1px solid var(--line);background:linear-gradient(145deg,#11171d,#0d1014);border-radius:28px;margin-bottom:28px}.eyebrow{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:12px}.hero h1{font-size:clamp(36px,6vw,72px);line-height:1;margin:14px 0}.hero p{font-size:19px;color:#c8d0d7;max-width:850px}.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}.badge{border:1px solid var(--line);padding:7px 11px;border-radius:999px;color:#cdd5db;background:#101419;font-size:13px}.toc{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:26px 0}.toc a{display:block;text-decoration:none;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;color:var(--text)}section{margin:42px 0}.section-title{display:flex;gap:14px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:10px}.section-title span{color:var(--accent);font-weight:900;font-size:13px}.section-title h2{margin:0;font-size:28px}h3{margin-top:28px;color:#fff}p{color:#c1c9d0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px}.card h3{margin:0 0 8px}.callout{border-left:4px solid var(--accent);background:#101a14;padding:18px 20px;border-radius:0 14px 14px 0;margin:18px 0}.warning{border-left-color:var(--warn);background:#19170f}.danger{border-left-color:var(--danger);background:#1b1113}pre{overflow:auto;background:#080a0d;border:1px solid var(--line);border-radius:14px;padding:18px;color:#dce6ec;font-size:13px}code{font-family:"SFMono-Regular",Consolas,monospace}.flow{font-family:monospace;background:#0a0d10;border:1px solid var(--line);padding:18px;border-radius:14px;white-space:pre;overflow:auto;color:#dce6ec}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}table{width:100%;border-collapse:collapse;min-width:650px}th,td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--panel2);color:#fff}td{color:#c4cdd4}.checklist{list-style:none;padding:0}.checklist li{padding:8px 0;border-bottom:1px solid #20262d}.checklist li:before{content:"□";color:var(--accent);font-weight:900;margin-right:10px}.rule{counter-increment:rules;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:8px 0}.rule:before{content:counter(rules,decimal-leading-zero) "  ";color:var(--accent);font-weight:900}.rules{counter-reset:rules}.small{font-size:13px;color:var(--muted)}.footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:24px}@media(max-width:650px){.wrap{padding:24px 14px 70px}.hero{padding:28px 20px}.hero h1{font-size:40px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+<div class="eyebrow">Gameplay Engineering • Knowledge Base</div>
+<h1>Third-Person Arcade Football<br>Movement Bible v1.0</h1>
+<p>Una specifica tecnica e di game design pensata per istruire Claude a progettare e implementare il movement di un gioco multiplayer di calcio arcade in terza persona, con la leggibilità e il caos fisico di Stumble Guys.</p>
+<div class="badges"><span class="badge">Unity 6 + C#</span><span class="badge">Third Person</span><span class="badge">Arcade Football</span><span class="badge">Multiplayer-ready</span><span class="badge">Game Feel First</span></div>
+</header>
+
+<nav class="toc">
+<a href="#principles">01 · Principi</a><a href="#architecture">02 · Architettura</a><a href="#locomotion">03 · Locomotion</a><a href="#camera">04 · Camera</a><a href="#football">05 · Football</a><a href="#collision">06 · Collision</a><a href="#feel">07 · Game Feel</a><a href="#animation">08 · Animation</a><a href="#network">09 · Multiplayer</a><a href="#level">10 · Level Design</a><a href="#lab">11 · Movement Lab</a><a href="#testing">12 · Testing</a><a href="#claude">13 · Claude Rules</a><a href="#kb">14 · KB Structure</a>
+</nav>
+
+<section id="principles"><div class="section-title"><span>01</span><h2>Principi di design</h2></div>
+<div class="callout"><strong>Regola assoluta:</strong> il movement non deve simulare un calciatore reale. Deve simulare la sensazione che il giocatore vuole avere quando controlla un personaggio in un gioco arcade.</div>
+<div class="grid">
+<div class="card"><h3>Responsiveness</h3><p>L'input deve produrre una risposta percepibile quasi immediatamente. Il giocatore deve sentire di avere il controllo.</p></div>
+<div class="card"><h3>Predictability</h3><p>Lo stesso input, nelle stesse condizioni, deve produrre sostanzialmente lo stesso risultato.</p></div>
+<div class="card"><h3>Physicality</h3><p>Il personaggio deve avere peso, collisioni e momentum percepibili senza diventare scivoloso o ingestibile.</p></div>
+<div class="card"><h3>Readability</h3><p>Il giocatore deve capire dove sta andando, cosa ha colpito e perché è stato spinto, stordito o fermato.</p></div>
+<div class="card"><h3>Fun over realism</h3><p>Se il comportamento fisicamente corretto rende il gioco peggiore, va corretto in favore del gameplay.</p></div>
+<div class="card"><h3>Competitive consistency</h3><p>Le assistenze possono aiutare l'intenzione, ma non devono trasformarsi in automazione dell'esito.</p></div>
+</div>
+<div class="flow">PLAYER INPUT
+    ↓
+PLAYER INTENT
+    ↓
+DESIRED MOVEMENT
+    ↓
+MOVEMENT CONSTRAINTS
+    ↓
+COLLISION / STATE OVERRIDES
+    ↓
+FINAL MOVEMENT
+    ↓
+ANIMATION + VFX + SFX + CAMERA</div>
+</section>
+
+<section id="architecture"><div class="section-title"><span>02</span><h2>Architettura</h2></div>
+<p>Separare sistemi e responsabilità. Nessun singolo script deve diventare il contenitore di tutto il gameplay.</p>
+<pre><code>Player
+├── InputController
+├── LocomotionController
+├── RotationController
+├── GroundingController
+├── PlayerCollisionController
+├── ActionController
+├── StumbleController
+├── AnimationBridge
+└── PlayerStateMachine
+
+Ball
+├── BallPhysics
+├── BallState
+├── BallInteractionController
+└── BallPrediction / targeting
+
+World
+├── MatchController
+├── Spawn / Respawn
+├── Goal / Scoring
+└── Arena systems
+
+Presentation
+├── ThirdPersonCamera
+├── CameraFeedback
+├── VFX
+├── SFX
+└── Haptics</code></pre>
+<div class="callout warning"><strong>Non mischiare:</strong> locomotion, ball physics, camera, animation e networking devono comunicare tramite stati e dati espliciti, non tramite modifiche casuali allo stesso Transform.</div>
+</section>
+
+<section id="locomotion"><div class="section-title"><span>03</span><h2>Third-Person Locomotion</h2></div>
+<h3>3.1 Input → Intent</h3><p>L'input è un vettore 2D astratto. Il controller deve interpretare l'intenzione prima di applicare movimento.</p>
+<pre><code>Vector2 moveInput
+        ↓
+clamp / deadzone
+        ↓
+Camera-relative direction
+        ↓
+Desired velocity
+        ↓
+Acceleration / deceleration
+        ↓
+Collision + grounding
+        ↓
+Final velocity</code></pre>
+<h3>3.2 Camera-relative movement</h3><p>W deve significare “verso l'alto dello schermo”, non “verso +Z del mondo”. Eliminare sempre la componente verticale del forward/right della camera prima del calcolo sul terreno.</p>
+<h3>3.3 Velocità</h3><p>Ragionare in termini di <strong>desired velocity</strong>, non di velocità imposta istantaneamente. Questo permette accelerazione, frenata e cambi di direzione controllabili.</p>
+<h3>3.4 Accelerazione / decelerazione</h3><p>Il personaggio deve raggiungere rapidamente la velocità desiderata, ma conservare abbastanza inerzia da non sembrare un cursore. Accelerazione e decelerazione devono essere parametri indipendenti.</p>
+<h3>3.5 Direction change</h3><p>Il cambio di direzione deve essere più permissivo di un simulatore realistico. Un giocatore deve poter correre, cambiare idea e inseguire la palla senza sentirsi intrappolato dal momentum.</p>
+<h3>3.6 Rotation</h3><p>Movimento e facing sono sistemi distinti. Il personaggio normalmente guarda nella direzione di locomozione; la rotazione deve essere smussata e con una soglia per evitare jitter da input minimi.</p>
+<h3>3.7 Grounding</h3><p>Grounded non significa semplicemente velocity.y == 0. Servono test robusti per terreno, pendenze, bordi, piccoli ostacoli, scale e moving platforms.</p>
+<h3>3.8 Jump</h3><p>Implementare jump buffer e coyote time. Il salto deve essere affidabile e immediato, con gravità e fall multiplier separabili per ottenere il feeling desiderato.</p>
+<h3>3.9 Air control</h3><p>Il controllo in aria deve permettere correzioni ma non rendere il personaggio un missile telecomandato. Deve essere un parametro separato dal controllo a terra.</p>
+<h3>3.10 Slopes</h3><p>Proiettare il movimento sul piano del terreno e gestire una slope limit. Il comportamento su pendii è parte del gameplay, non un dettaglio di collisione.</p>
+<h3>3.11 Sprint</h3><p>Lo sprint modifica parametri di locomozione; non richiede un secondo controller. Una tradeoff possibile è più velocità ma meno capacità di girare.</p>
+</section>
+
+<section id="camera"><div class="section-title"><span>04</span><h2>Camera Third Person</h2></div>
+<div class="grid"><div class="card"><h3>Follow</h3><p>Stabile e prevedibile. Il follow non deve creare ritardo percettibile rispetto al personaggio.</p></div><div class="card"><h3>Orbit</h3><p>Yaw/pitch fluidi, con limiti e sensibilità configurabili.</p></div><div class="card"><h3>Framing</h3><p>Deve mantenere leggibili personaggio, direzione di movimento e contesto.</p></div><div class="card"><h3>Ball awareness</h3><p>La palla è un interesse importante, ma la camera non deve diventare nervosa seguendola continuamente.</p></div><div class="card"><h3>Collision</h3><p>La camera deve evitare clipping con muri e oggetti senza teletrasporti o oscillazioni fastidiose.</p></div><div class="card"><h3>Look-ahead</h3><p>Può anticipare leggermente la direzione di movimento o la traiettoria della palla.</p></div></div>
+<div class="callout"><strong>Camera ≠ fisica:</strong> la palla può essere caotica; la camera deve essere il sistema stabile che rende quel caos comprensibile.</div>
+</section>
+
+<section id="football"><div class="section-title"><span>05</span><h2>Football Movement & Ball Feel</h2></div>
+<h3>5.1 Separazione</h3><div class="flow">PLAYER CONTROLLER       BALL CONTROLLER
+       │                       │
+       └──── BALL INTERACTION ─┘
+               │
+          Match / Rules</div>
+<p>Il player controller non deve diventare responsabile della fisica della palla.</p>
+<h3>5.2 Stati della palla</h3><pre><code>FREE → CONTACT → CONTROLLED → KICKED → AIRBORNE → BOUNCE → FREE</code></pre>
+<h3>5.3 Kick</h3><p>Un calcio deve essere una sequenza percettiva: anticipation → contact → impulse → VFX/SFX → camera/haptics → recovery. L'input deve comunicare immediatamente l'intenzione.</p>
+<h3>5.4 Ball magnetism</h3><p>Una piccola interaction zone può correggere la difficoltà fisica di colpire una sfera in terza persona. L'assistenza deve <strong>aiutare l'intenzione, non garantire il risultato</strong>.</p>
+<h3>5.5 Aim assist</h3><p>Prevedere livelli configurabili: NONE / LOW / MEDIUM / HIGH. L'assist deve considerare direzione, distanza, posizione della palla e possibili target senza trasformare il tiro in un sistema automatico.</p>
+<h3>5.6 Possession / dribbling</h3><p>Se esiste possesso, usare uno stato gameplay esplicito anziché una joint fisica che trascina la palla. La velocità con palla può essere diversa da quella senza palla.</p>
+<h3>5.7 Tackle</h3><p>Il tackle deve essere un'azione con finestra, direzione, forza, recovery e possibili reazioni. Non deve essere semplicemente “aggiungi una forza al Rigidbody avversario”.</p>
+</section>
+
+<section id="collision"><div class="section-title"><span>06</span><h2>Collisioni, Stumble & Ragdoll</h2></div>
+<p>Le collisioni tra giocatori sono gameplay, non semplice collision detection.</p>
+<div class="table-wrap"><table><thead><tr><th>Livello</th><th>Reazione</th><th>Uso</th></tr></thead><tbody><tr><td>0</td><td>Micro-stagger</td><td>Contatti leggeri</td></tr><tr><td>1</td><td>Push</td><td>Contatto normale</td></tr><tr><td>2</td><td>Stumble</td><td>Impatto significativo</td></tr><tr><td>3</td><td>Knockback</td><td>Tackle / collisione forte</td></tr><tr><td>4</td><td>Fall</td><td>Evento molto forte</td></tr><tr><td>5</td><td>Ragdoll</td><td>Evento speciale / caotico</td></tr></tbody></table></div>
+<h3>Movement authority</h3><pre><code>Knockback / forced reaction
+        ↓
+Tackle / action
+        ↓
+Stumble
+        ↓
+Jump / airborne
+        ↓
+Normal locomotion</code></pre>
+<p>Ogni stato deve avere priorità e durata esplicite. Evitare che cinque sistemi scrivano contemporaneamente posizione e velocità.</p>
+<h3>Recovery</h3><p>Il giocatore deve poter tornare al controllo rapidamente. Il caos è divertente quando crea situazioni; non quando blocca il giocatore per lunghi periodi.</p>
+</section>
+
+<section id="feel"><div class="section-title"><span>07</span><h2>Game Feel & Impact</h2></div>
+<p>La simulazione non è completa quando il movimento funziona matematicamente. È completa quando il giocatore lo percepisce bene.</p>
+<div class="grid"><div class="card"><h3>Input response</h3><p>Minimizzare la latenza percepita.</p></div><div class="card"><h3>Hitstop</h3><p>Micro-pause su impatti importanti per enfatizzare il contatto.</p></div><div class="card"><h3>Camera shake</h3><p>Usare in modo breve e leggibile; mai compromettere la visibilità.</p></div><div class="card"><h3>Haptics</h3><p>Vibrazione breve e proporzionata all'evento.</p></div><div class="card"><h3>SFX</h3><p>Il suono deve confermare contatto, kick, tackle e landing.</p></div><div class="card"><h3>VFX</h3><p>Polvere, scie, impact effects e altri segnali rendono leggibili gli eventi.</p></div></div>
+<div class="callout"><strong>Principio:</strong> il feedback non deve mentire. Può enfatizzare un evento, ma non deve creare una percezione incompatibile con ciò che è successo nel gameplay.</div>
+</section>
+
+<section id="animation"><div class="section-title"><span>08</span><h2>Animation Integration</h2></div>
+<p>Il movement produce dati semantici; l'animation system li interpreta.</p>
+<pre><code>Movement → speedNormalized
+         → movementDirection
+         → isGrounded
+         → isSprinting
+         → isJumping
+         → isFalling
+         → isStumbling
+         → actionState
+                    ↓
+                Animation</code></pre>
+<div class="grid"><div class="card"><h3>Locomotion</h3><p>Idle / walk / run / sprint e blend direzionali.</p></div><div class="card"><h3>Transitions</h3><p>Acceleration, deceleration, turn e stop devono avere animazioni credibili.</p></div><div class="card"><h3>Actions</h3><p>Kick, tackle, stumble e fall devono integrarsi con il movement state.</p></div><div class="card"><h3>Root motion</h3><p>Non usarlo per forza per la locomozione base. Valutarlo selettivamente per azioni dove migliora il feeling.</p></div></div>
+</section>
+
+<section id="network"><div class="section-title"><span>09</span><h2>Multiplayer Architecture</h2></div>
+<p>Il movement deve essere progettato con il multiplayer in mente dall'inizio.</p>
+<div class="flow">CLIENT INPUT
+    ↓
+LOCAL PREDICTION
+    ↓
+SIMULATION
+    ↓
+SERVER AUTHORITY
+    ↓
+RECONCILIATION
+    ↓
+INTERPOLATION / PRESENTATION</div>
+<div class="grid"><div class="card"><h3>Prediction</h3><p>Il client deve rispondere subito al proprio input.</p></div><div class="card"><h3>Server authority</h3><p>Le regole competitive importanti devono avere una fonte autorevole.</p></div><div class="card"><h3>Reconciliation</h3><p>Correggere errori senza teletrasporti percepibili.</p></div><div class="card"><h3>Interpolation</h3><p>I giocatori remoti devono apparire fluidi anche con update discreti.</p></div><div class="card"><h3>Lag compensation</h3><p>Considerare latency e tick rate nelle interazioni critiche.</p></div><div class="card"><h3>Determinism</h3><p>Rendere movement, jump, tackle e interazioni prevedibili e riproducibili dove possibile.</p></div></div>
+<div class="callout danger"><strong>Anti-pattern:</strong> sincronizzare semplicemente Transform.position e sperare che il multiplayer risolva il resto.</div>
+</section>
+
+<section id="level"><div class="section-title"><span>10</span><h2>Level Design ↔ Movement</h2></div>
+<p>Il movement non può essere bilanciato senza considerare il campo.</p>
+<div class="grid"><div class="card"><h3>Field dimensions</h3><p>Determinano tempi di attraversamento e densità degli scontri.</p></div><div class="card"><h3>Speed ↔ space</h3><p>Velocità, dimensioni del campo e tempo medio per raggiungere la palla devono essere coerenti.</p></div><div class="card"><h3>Obstacles</h3><p>Rampe, muri, piattaforme e bordi devono avere collisioni compatibili con il movement.</p></div><div class="card"><h3>Respawn</h3><p>Ogni caduta o stato bloccato deve avere una recovery chiara.</p></div></div>
+<h3>Stuck detection</h3><p>Monitorare velocità, input e posizione per riconoscere quando un giocatore è intrappolato. Implementare recovery/respawn sicuri.</p>
+</section>
+
+<section id="lab"><div class="section-title"><span>11</span><h2>Movement Lab</h2></div>
+<p>Creare una scena dedicata esclusivamente al testing del movement. Non testare tutto nel match reale.</p>
+<div class="flow">MOVEMENT LAB
+
+[ FLAT ] [ SLOPES ] [ STAIRS ] [ WALLS ]
+
+[ RAMPS ] [ JUMPS ] [ MOVING PLATFORMS ]
+
+[ PLAYER COLLISION ] [ STUMBLE ] [ TACKLE ]
+
+[ BALL ] [ KICK ] [ AIRBORNE ] [ RECOVERY ]</div>
+<h3>Debug overlay</h3><pre><code>Speed:           7.24
+Desired Speed:   8.00
+Grounded:        TRUE
+Movement State:  SPRINT
+Slope:           12°
+Vertical Speed:  -1.8
+Ball Distance:   1.4m
+Collision State: NONE
+Network Tick:    12482
+Ping:            48ms</code></pre>
+<p>Visualizzare anche vettori: desired velocity, actual velocity, camera forward/right, character forward, ground normal e collision normal.</p>
+</section>
+
+<section id="testing"><div class="section-title"><span>12</span><h2>Testing & Definition of Done</h2></div>
+<h3>Test matrix</h3>
+<ul class="checklist"><li>Forward / backward / left / right</li><li>Diagonali senza aumento di velocità</li><li>Rapid direction changes</li><li>Stop da sprint</li><li>Camera rotation durante movimento</li><li>Camera pitch estremo</li><li>Flat ground / slopes / stairs / edges</li><li>Jump / fall / landing</li><li>Coyote time / jump buffer</li><li>Air control</li><li>Player-player collision</li><li>Multiple-player collision</li><li>Stumble / knockback / ragdoll</li><li>Chase ball</li><li>Kick while moving</li><li>Tackle while moving</li><li>Ball + player + player nello stesso frame</li><li>Respawn / stuck recovery</li><li>High latency / packet loss scenarios</li></ul>
+<h3>Automated tests</h3><p>Prevedere test per proprietà invarianti: velocità diagonale ≤ max speed, jump buffer entro finestra, coyote time entro finestra, grounded coerente, nessuna rotazione con input sotto deadzone, recovery da stuck.</p>
+<h3>Definition of Done</h3><div class="grid"><div class="card"><h3>Control</h3><p>Il giocatore può muoversi, girare, saltare e fermarsi senza combattere il controller.</p></div><div class="card"><h3>Feel</h3><p>Il personaggio è pesante ma responsive.</p></div><div class="card"><h3>Clarity</h3><p>Collisioni e azioni sono leggibili.</p></div><div class="card"><h3>Robustness</h3><p>Terrain, edge cases e recovery sono gestiti.</p></div><div class="card"><h3>Networking</h3><p>Il design non richiede di riscrivere il controller per il multiplayer.</p></div><div class="card"><h3>Tuning</h3><p>I parametri importanti sono configurabili e testabili.</p></div></div>
+</section>
+
+<section id="claude"><div class="section-title"><span>13</span><h2>Claude — Senior Developer Decision Rules</h2></div>
+<p>Queste regole vanno trattate come istruzioni di progetto, non come suggerimenti.</p>
+<div class="rules">
+<div class="rule">Build arcade football movement, not a football simulator.</div>
+<div class="rule">Player control has priority over physical realism.</div>
+<div class="rule">Never introduce realistic physics unless a gameplay requirement justifies it.</div>
+<div class="rule">Separate Input, Intent, Locomotion, Rotation, Grounding, Collision, Actions, Camera, Animation and Networking.</div>
+<div class="rule">Never let multiple systems independently write to the character Transform without an explicit authority model.</div>
+<div class="rule">Treat player intent as a first-class concept.</div>
+<div class="rule">Assist intention, never guarantee outcome.</div>
+<div class="rule">Never make diagonal movement faster than cardinal movement.</div>
+<div class="rule">Camera vertical rotation must not directly determine ground movement.</div>
+<div class="rule">Small inputs must not cause rotation jitter.</div>
+<div class="rule">Do not let player collisions remove control unless an explicit gameplay state requires it.</div>
+<div class="rule">Every forced movement state needs priority, duration and recovery.</div>
+<div class="rule">The ball is its own gameplay system.</div>
+<div class="rule">Do not solve ball interaction by adding arbitrary forces to the player controller.</div>
+<div class="rule">Expose gameplay tuning parameters; avoid magic numbers buried in methods.</div>
+<div class="rule">Prefer ScriptableObjects or equivalent configuration assets for movement profiles.</div>
+<div class="rule">Build the simplest system capable of producing the desired feel.</div>
+<div class="rule">Do not over-engineer speculative features before validating the core loop.</div>
+<div class="rule">Every movement feature must have edge cases and a test plan.</div>
+<div class="rule">Before changing existing movement, explain current behavior, root cause, proposed change and side effects.</div>
+<div class="rule">Use the Movement Lab to validate changes before testing in a full match.</div>
+<div class="rule">Do not declare movement complete because it works in the happy path.</div>
+<div class="rule">Movement changes can alter competitive balance; treat them as gameplay changes.</div>
+<div class="rule">Network behavior must be considered before adding mechanics that depend on local-only physics.</div>
+<div class="rule">Animation communicates gameplay; it should not secretly override gameplay state.</div>
+<div class="rule">When choosing between two technically valid solutions, prefer the one that is easier to tune and debug.</div>
+<div class="rule">When uncertain, prioritize responsiveness, readability, predictability and fun—in that order.</div>
+<div class="rule">Do not copy values from another game as truth; use references only as starting points for tuning.</div>
+<div class="rule">A technically elegant controller that feels bad is a failed controller.</div>
+<div class="rule">Always ask: “Would a player understand and trust what just happened?”</div>
+</div>
+</section>
+
+<section id="kb"><div class="section-title"><span>14</span><h2>Knowledge Base Structure</h2></div>
+<p>Non dare a Claude una cartella piena di tutorial casuali. Organizza la knowledge base per concetti, algoritmi, edge cases, implementazioni e test.</p>
+<pre><code>THIRD_PERSON_ARCADE_FOOTBALL_KB/
+│
+├── 00_MASTER/
+│   ├── movement_bible.md
+│   ├── claude_movement_rules.md
+│   └── game_design_principles.md
+│
+├── 01_MATH/
+│   ├── vectors.md
+│   ├── normalization.md
+│   ├── dot_product.md
+│   ├── cross_product.md
+│   ├── coordinate_spaces.md
+│   └── quaternions.md
+│
+├── 02_LOCOMOTION/
+│   ├── input_intent.md
+│   ├── camera_relative_movement.md
+│   ├── acceleration.md
+│   ├── deceleration.md
+│   ├── rotation.md
+│   ├── grounding.md
+│   ├── slopes.md
+│   ├── jump.md
+│   └── air_control.md
+│
+├── 03_PLAYER_PHYSICS/
+│   ├── collision.md
+│   ├── push.md
+│   ├── knockback.md
+│   ├── stumble.md
+│   ├── ragdoll.md
+│   └── recovery.md
+│
+├── 04_FOOTBALL/
+│   ├── ball_physics.md
+│   ├── ball_states.md
+│   ├── kick.md
+│   ├── possession.md
+│   ├── dribbling.md
+│   ├── tackle.md
+│   ├── ball_magnetism.md
+│   └── aim_assist.md
+│
+├── 05_CAMERA/
+│   ├── third_person_camera.md
+│   ├── orbit.md
+│   ├── framing.md
+│   ├── ball_awareness.md
+│   └── camera_collision.md
+│
+├── 06_GAME_FEEL/
+│   ├── responsiveness.md
+│   ├── hitstop.md
+│   ├── camera_shake.md
+│   ├── haptics.md
+│   ├── vfx.md
+│   └── sfx.md
+│
+├── 07_ANIMATION/
+│   ├── locomotion_blend.md
+│   ├── turning.md
+│   ├── jump_land.md
+│   ├── kick.md
+│   └── stumble.md
+│
+├── 08_NETWORKING/
+│   ├── prediction.md
+│   ├── reconciliation.md
+│   ├── interpolation.md
+│   ├── lag_compensation.md
+│   └── determinism.md
+│
+├── 09_LEVEL_DESIGN/
+│   ├── field_scale.md
+│   ├── movement_pacing.md
+│   ├── obstacles.md
+│   └── respawn.md
+│
+├── 10_ENGINEERING/
+│   ├── architecture.md
+│   ├── state_machine.md
+│   ├── configs.md
+│   ├── debugging.md
+│   ├── movement_lab.md
+│   └── performance.md
+│
+└── 11_TESTS/
+    ├── movement_tests.md
+    ├── collision_tests.md
+    ├── ball_tests.md
+    └── network_tests.md</code></pre>
+</section>
+
+<section><div class="section-title"><span>APPENDIX</span><h2>Recommended tuning surface</h2></div>
+<div class="table-wrap"><table><thead><tr><th>Category</th><th>Parameters</th><th>Why</th></tr></thead><tbody>
+<tr><td>Locomotion</td><td>MoveSpeed, Acceleration, Deceleration, TurnSpeed</td><td>Core responsiveness</td></tr>
+<tr><td>Jump</td><td>JumpVelocity, Gravity, FallMultiplier, CoyoteTime, JumpBuffer</td><td>Jump feel and forgiveness</td></tr>
+<tr><td>Air</td><td>AirControl, AirAcceleration</td><td>Mid-air correction</td></tr>
+<tr><td>Sprint</td><td>SprintSpeed, SprintAcceleration, SprintTurnMultiplier</td><td>Speed vs control tradeoff</td></tr>
+<tr><td>Collision</td><td>PushStrength, Knockback, StumbleThreshold, RecoveryTime</td><td>Physical comedy and fairness</td></tr>
+<tr><td>Ball</td><td>KickPower, KickCone, Magnetism, FirstTouchAssist</td><td>Ball readability</td></tr>
+<tr><td>Camera</td><td>Distance, Height, FollowSharpness, LookAhead, Pitch</td><td>Spatial awareness</td></tr>
+<tr><td>Feedback</td><td>Hitstop, Shake, Haptics, VFXIntensity</td><td>Impact perception</td></tr>
+</tbody></table></div>
+<div class="callout"><strong>Final principle:</strong> tutti i numeri sono ipotesi di tuning, non verità. Claude deve proporre valori iniziali, creare strumenti per modificarli e usare playtest + test automatici per convergere sul feeling desiderato.</div>
+</section>
+
+<footer class="footer">Third-Person Arcade Football — Movement Bible v1.0 · Designed as a project-level knowledge base for Claude. Technical decisions should be validated against the exact Unity version, networking stack and gameplay requirements of the project.</footer>
+</div>
+</body>
+</html>

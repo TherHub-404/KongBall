@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ball Physics Bible — Rolling Ball System</title>
+<style>
+:root{
+  --bg:#f2f4ef;--paper:#fff;--ink:#171a18;--muted:#687067;
+  --line:#d9ded7;--green:#2e6a3e;--lime:#8dbd3f;--dark:#1c2b20;
+  --soft:#eaf0e8;--orange:#a85c22;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.55}
+.wrap{max-width:1080px;margin:auto;padding:44px 22px 80px}
+.hero{background:linear-gradient(135deg,#18301f,#315c34);color:white;border-radius:24px;padding:42px 44px;margin-bottom:20px}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
+h1{font-size:42px;line-height:1.05;margin:10px 0 14px;letter-spacing:-.035em}
+h2{font-size:24px;line-height:1.15;margin:0 0 12px;letter-spacing:-.02em}
+h3{font-size:16px;margin:20px 0 7px}
+p{margin:7px 0;color:#303630}.hero p{color:#e9f0e8;max-width:820px;font-size:18px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:24px}
+.full{grid-column:1/-1}
+.critical{border-left:5px solid var(--green)}
+.warn{border-left:5px solid var(--orange)}
+.rule{background:var(--soft);border-radius:12px;padding:14px 16px;margin-top:14px;font-weight:750}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:16px 0}
+.node{background:#edf2ec;border:1px solid #d7dfd5;border-radius:10px;padding:10px 13px;font-weight:750}
+.arrow{font-size:18px;color:var(--green);font-weight:900}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}
+th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#eef0ec;padding:2px 5px;border-radius:5px}
+pre{background:#172019;color:#eef5ed;border-radius:14px;padding:18px;overflow:auto;font-size:12px;line-height:1.55}
+ul,ol{padding-left:21px}li{margin:5px 0}
+.checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 24px}
+.check{padding:8px 0;border-bottom:1px dashed var(--line)}
+.metric{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.metric div{background:#f1f4ef;border-radius:12px;padding:14px}
+.metric strong{display:block;font-size:22px}.metric span{font-size:12px;color:var(--muted)}
+.footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px}
+@media(max-width:720px){.grid,.checklist{grid-template-columns:1fr}.metric{grid-template-columns:1fr}.hero{padding:30px 24px}h1{font-size:34px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<section class="hero">
+<div class="eyebrow">GAME PHYSICS · BALL SYSTEM · V1.0</div>
+<h1>Rolling Ball Physics Bible</h1>
+<p><strong>Obiettivo:</strong> creare una palla fisicamente credibile ma arcade, reattiva e divertente, coerente con il mondo cartoon 3D e con la palla “pupazzo” definita per il gioco.</p>
+</section>
+
+<div class="grid">
+
+<section class="card full critical">
+<h2>01 · Principio fondamentale</h2>
+<p>La fisica non deve cercare la simulazione perfetta di una palla reale. Deve produrre un comportamento che <strong>sembri fisico</strong> e che allo stesso tempo sia estremamente controllabile dal giocatore.</p>
+<div class="rule">PHYSICALLY BELIEVABLE + GAMEPLAY CONTROLLED = DESIRED BALL FEEL</div>
+<div class="flow">
+<div class="node">INPUT</div><div class="arrow">→</div>
+<div class="node">MOVEMENT INTENT</div><div class="arrow">→</div>
+<div class="node">ACCELERATION / FORCE</div><div class="arrow">→</div>
+<div class="node">RIGIDBODY</div><div class="arrow">→</div>
+<div class="node">COLLISIONS</div><div class="arrow">→</div>
+<div class="node">ROLLING + ROTATION</div>
+</div>
+</section>
+
+<section class="card">
+<h2>02 · Architettura</h2>
+<p>Separare sempre la simulazione fisica dal modello 3D visibile.</p>
+<h3>Physical Ball</h3>
+<ul>
+<li>Rigid Body</li><li>Sphere Collider</li><li>Posizione e velocità</li><li>Rotazione e angular velocity</li><li>Collisioni e contatti</li>
+</ul>
+<h3>Visual Ball</h3>
+<ul>
+<li>Modello 3D “pupazzo”</li><li>Materiale e texture</li><li>Animazione visiva</li><li>Scuffs, sporco, usura</li>
+</ul>
+<div class="rule">Il modello può cambiare senza modificare il comportamento fisico.</div>
+</section>
+
+<section class="card">
+<h2>03 · Ball Feel</h2>
+<p>Il feeling target è:</p>
+<ul>
+<li><strong>Reattivo:</strong> parte rapidamente quando riceve input.</li>
+<li><strong>Pesante:</strong> mantiene momentum e non cambia direzione istantaneamente.</li>
+<li><strong>Morbido:</strong> accelerazioni e decelerazioni progressive.</li>
+<li><strong>Elastico:</strong> rimbalzo moderato.</li>
+<li><strong>Controllabile:</strong> il giocatore deve poter prevedere dove andrà.</li>
+</ul>
+<div class="metric">
+<div><strong>Alta</strong><span>Input response</span></div>
+<div><strong>Media</strong><span>Friction</span></div>
+<div><strong>Media</strong><span>Bounce</span></div>
+</div>
+</section>
+
+<section class="card full">
+<h2>04 · Rolling</h2>
+<p>Il rolling deve essere fisicamente coerente con la direzione del movimento, ma con una correzione arcade per evitare scivolamenti e rotazioni strane.</p>
+<div class="flow">
+<div class="node">Linear velocity</div><div class="arrow">→</div>
+<div class="node">Desired angular velocity</div><div class="arrow">→</div>
+<div class="node">Rolling correction</div><div class="arrow">→</div>
+<div class="node">Visual rotation</div>
+</div>
+<p>Per una sfera, la relazione di riferimento è <code>ω ≈ v / r</code>. Non è necessario applicarla in modo rigidamente realistico: la correzione deve servire al gameplay.</p>
+<div class="rule">Se la palla trasla ma non ruota correttamente, il sistema deve riallineare gradualmente la rotazione.</div>
+</section>
+
+<section class="card">
+<h2>05 · Stati della palla</h2>
+<table>
+<tr><th>State</th><th>Comportamento</th></tr>
+<tr><td>GROUNDED</td><td>Contatto con il terreno; rolling attivo.</td></tr>
+<tr><td>ROLLING</td><td>Traslazione + rotazione coerente.</td></tr>
+<tr><td>SLIDING</td><td>Traslazione non ancora sincronizzata con il rolling.</td></tr>
+<tr><td>AIRBORNE</td><td>In aria; rotazione conservata per inerzia.</td></tr>
+<tr><td>BOUNCING</td><td>Collisione verticale con perdita di energia.</td></tr>
+<tr><td>STOPPED</td><td>Velocità sotto soglia; eliminare micro-movimenti.</td></tr>
+</table>
+</section>
+
+<section class="card">
+<h2>06 · Input</h2>
+<p>Non spostare direttamente il Transform della palla.</p>
+<div class="rule">INPUT → DESIRED DIRECTION → DESIRED VELOCITY → ACCELERATION → RIGIDBODY</div>
+<p>Questo mantiene il movimento fisico, rende il controllo prevedibile e permette di gestire correttamente collisioni e momentum.</p>
+</section>
+
+<section class="card">
+<h2>07 · Accelerazione</h2>
+<p>Accelerazione e decelerazione devono essere diverse.</p>
+<table>
+<tr><th>Parametro</th><th>Starting point</th><th>Feeling</th></tr>
+<tr><td>Max speed</td><td>8.0 m/s</td><td>Veloce ma leggibile</td></tr>
+<tr><td>Acceleration</td><td>22.0</td><td>Partenza reattiva</td></tr>
+<tr><td>Deceleration</td><td>16.0</td><td>Momentum conservato</td></tr>
+<tr><td>Turn acceleration</td><td>28.0</td><td>Cambio direzione controllato</td></tr>
+</table>
+<p><small>I valori sono parametri iniziali da calibrare in una test arena.</small></p>
+</section>
+
+<section class="card">
+<h2>08 · Turning</h2>
+<p>Il cambio di direzione deve essere progressivo:</p>
+<div class="rule">current velocity → desired velocity → interpolation → new velocity</div>
+<p>La palla deve descrivere una curva quando cambia direzione, non girare come un oggetto telecomandato.</p>
+</section>
+
+<section class="card full">
+<h2>09 · Collisioni</h2>
+<table>
+<tr><th>Collisione</th><th>Regola</th></tr>
+<tr><td>Palla → erba</td><td>Rolling + friction + rolling resistance.</td></tr>
+<tr><td>Palla → giocatore</td><td>Momentum + risposta morbida; evitare rimbalzi eccessivi.</td></tr>
+<tr><td>Palla → legno</td><td>Bounce controllato + perdita di energia.</td></tr>
+<tr><td>Palla → porta/rete</td><td>Collisione leggibile, rete con risposta elastica visiva.</td></tr>
+<tr><td>Palla → altra palla</td><td>Momentum fisico e collisione simmetrica.</td></tr>
+<tr><td>Palla → ambiente</td><td>Collisioni semplici e robuste, priorità alla stabilità.</td></tr>
+</table>
+</section>
+
+<section class="card">
+<h2>10 · Bounce</h2>
+<p>La palla non deve comportarsi come una pallina da basket.</p>
+<div class="rule">Target: rimbalzo medio, rapido e leggibile.</div>
+<ul>
+<li>Restituzione iniziale suggerita: <code>0.35</code></li>
+<li>Perdita di energia evidente.</li>
+<li>Mantenere parte dello spin.</li>
+<li>Ridurre i micro-rimbalzi a bassa velocità.</li>
+</ul>
+</section>
+
+<section class="card">
+<h2>11 · Kick System</h2>
+<p>Il calcio deve essere un evento separato dal normale rolling.</p>
+<div class="flow">
+<div class="node">Kick input</div><div class="arrow">→</div>
+<div class="node">Linear impulse</div><div class="arrow">+</div>
+<div class="node">Angular impulse</div><div class="arrow">→</div>
+<div class="node">Physics</div>
+</div>
+<p>Questo permette di costruire progressivamente passaggi, tiri potenti, spin, deviazioni e rimbalzi senza creare sistemi separati.</p>
+</section>
+
+<section class="card">
+<h2>12 · Spin</h2>
+<ul>
+<li><strong>No spin:</strong> traiettoria più neutra.</li>
+<li><strong>Top spin:</strong> rotazione in avanti.</li>
+<li><strong>Back spin:</strong> rotazione inversa.</li>
+<li><strong>Side spin:</strong> rotazione laterale per sistemi avanzati.</li>
+</ul>
+<div class="rule">Lo spin deve influenzare la palla soprattutto quando viene applicato da un calcio o da una collisione significativa.</div>
+</section>
+
+<section class="card full">
+<h2>13 · Superfici</h2>
+<p>Il campo è nella foresta: il sistema deve essere pronto a gestire materiali differenti.</p>
+<table>
+<tr><th>Surface</th><th>Friction</th><th>Rolling resistance</th><th>Bounce</th><th>Feeling</th></tr>
+<tr><td>Grass</td><td>0.75</td><td>0.20</td><td>0.35</td><td>Standard</td></tr>
+<tr><td>Mud</td><td>0.95</td><td>0.55</td><td>0.20</td><td>Lenta e pesante</td></tr>
+<tr><td>Wood</td><td>0.55</td><td>0.10</td><td>0.45</td><td>Scivolosa e rimbalzante</td></tr>
+<tr><td>Stone</td><td>0.45</td><td>0.08</td><td>0.55</td><td>Rapida e reattiva</td></tr>
+</table>
+</section>
+
+<section class="card full critical">
+<h2>14 · Master Configuration</h2>
+<pre>{
+  "ball_physics": {
+    "mass": 1.0,
+    "radius": 0.35,
+
+    "movement": {
+      "max_speed": 8.0,
+      "acceleration": 22.0,
+      "deceleration": 16.0,
+      "turn_acceleration": 28.0,
+      "air_control": 0.25
+    },
+
+    "rolling": {
+      "rolling_resistance": 0.20,
+      "slip_threshold": 0.15,
+      "correction_strength": 0.65
+    },
+
+    "rotation": {
+      "angular_drag": 0.25,
+      "spin_retention": 0.80,
+      "max_angular_velocity": 40.0
+    },
+
+    "bounce": {
+      "restitution": 0.35,
+      "energy_retention": 0.35
+    },
+
+    "air": {
+      "drag": 0.02
+    },
+
+    "kick": {
+      "normal_impulse": 8.0,
+      "power_impulse": 15.0,
+      "spin_strength": 4.0
+    }
+  }
+}</pre>
+</section>
+
+<section class="card full">
+<h2>15 · Physics Test Arena</h2>
+<p>Prima di collegare la palla al gioco completo, creare una scena di test dedicata.</p>
+<div class="flow">
+<div class="node">Flat Grass</div><div class="node">Wall</div><div class="node">Ramp</div><div class="node">Goal</div><div class="node">Mud</div><div class="node">Wood</div><div class="node">Stone</div>
+</div>
+<h3>Debug HUD</h3>
+<pre>BALL PHYSICS
+
+Speed       6.42 m/s
+Velocity    X 5.8 / Z 2.7
+Angular     18.4 rad/s
+Grounded    YES
+Rolling     YES
+Sliding     NO
+Surface     GRASS
+Spin        TOP</pre>
+</section>
+
+<section class="card">
+<h2>16 · Test obbligatori</h2>
+<div class="checklist">
+<div class="check">□ Accelerazione da fermo</div>
+<div class="check">□ Frenata naturale</div>
+<div class="check">□ Cambio direzione</div>
+<div class="check">□ Rolling su erba</div>
+<div class="check">□ Scivolamento controllato</div>
+<div class="check">□ Rimbalzo singolo</div>
+<div class="check">□ Rimbalzi multipli</div>
+<div class="check">□ Collisione con parete</div>
+<div class="check">□ Collisione con giocatore</div>
+<div class="check">□ Kick normale</div>
+<div class="check">□ Kick potente</div>
+<div class="check">□ Kick + spin</div>
+<div class="check">□ Passaggio</div>
+<div class="check">□ Palla ferma senza jitter</div>
+</div>
+</section>
+
+<section class="card warn">
+<h2>17 · Errori da evitare</h2>
+<ul>
+<li>Muovere la palla direttamente via Transform.</li>
+<li>Correggere continuamente la posizione in modo aggressivo.</li>
+<li>Usare solo friction del motore senza rolling resistance.</li>
+<li>Far fermare la palla istantaneamente.</li>
+<li>Permettere micro-rimbalzi infiniti.</li>
+<li>Rotazione visiva scollegata dal movimento.</li>
+<li>Fisica perfettamente realistica ma poco divertente.</li>
+</ul>
+</section>
+
+<section class="card full">
+<h2>18 · Principio finale</h2>
+<p style="font-size:21px"><strong>La palla deve sembrare fisica, non essere una simulazione fisica.</strong></p>
+<p>Il sistema deve lasciare che il motore gestisca collisioni e momentum, mentre i parametri di gameplay controllano accelerazione, rolling, decelerazione, spin e risposta all'input.</p>
+<div class="rule">BUILD THE PHYSICS ONCE → TUNE THE FEEL THROUGH PARAMETERS</div>
+</section>
+
+</div>
+<div class="footer">Rolling Ball Physics Bible · Game Physics Documentation · V1.0</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Third-Person Arcade Football — Match Rules Bible</title>
+<style>
+:root{--bg:#0b0d10;--panel:#11151a;--panel2:#171c22;--text:#eef2f6;--muted:#a8b0ba;--line:#29313a;--accent:#7ee787;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}
+main{max-width:1080px;margin:auto;padding:56px 28px 100px}h1{font-size:48px;line-height:1.05;letter-spacing:-1.5px;margin:0 0 16px}
+h2{font-size:30px;line-height:1.15;margin:58px 0 18px;padding-top:18px;border-top:1px solid var(--line)}h3{font-size:20px;margin-top:32px}
+p,li{color:#d8dde3}strong{color:#fff}.hero{background:linear-gradient(145deg,#151b21,#0d1115);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:35px}
+.kicker{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:13px}.subtitle{font-size:20px;color:var(--muted);max-width:850px}
+.rule{border-left:4px solid var(--accent);background:var(--panel);padding:18px 20px;margin:22px 0;border-radius:0 12px 12px 0}.warning{border-left-color:var(--warn)}.danger{border-left-color:var(--danger)}
+pre{background:#07090b;border:1px solid var(--line);padding:20px;border-radius:12px;overflow:auto;color:#d9e2ea;line-height:1.45}
+code{background:#171c22;padding:2px 6px;border-radius:5px}table{width:100%;border-collapse:collapse;margin:20px 0;background:var(--panel)}
+th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{color:#fff;background:var(--panel2)}td{color:#cfd6dd}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin:3px;color:#dce3e9;font-size:13px}.check{list-style:"✓  "}.no{list-style:"✕  "}.small{font-size:14px;color:var(--muted)}
+</style>
+</head>
+<body><main>
+<section class="hero">
+<div class="kicker">Gameplay Engineering Bible · KB 07</div>
+<h1>Match Rules</h1>
+<p class="subtitle">The authoritative rules layer that turns movement, ball interaction, physics, actions and networking into one deterministic football match.</p>
+<p><strong>Design target:</strong> Players should always understand what the match expects, why a goal or reset happened, and what gameplay state comes next.</p>
+</section>
+
+<div class="rule"><strong>CORE PRINCIPLE</strong><br>The Match Rules system decides <strong>what the match means</strong>. It does not move players, simulate physics or own presentation. It consumes authoritative gameplay events and produces explicit match commands/state transitions.</div>
+
+<h2>01 — Match State Is Independent</h2>
+<p>The existing architecture already separates global match state from player state. Keep that separation strict.</p>
+<pre>BOOT
+  ↓
+LOBBY
+  ↓
+LOADING
+  ↓
+COUNTDOWN
+  ↓
+PLAYING
+  ↓
+GOAL
+  ↓
+RESET
+  ↓
+PLAYING
+  ↓
+MATCH END
+  ↓
+RESULTS</pre>
+<p>A player can be in <code>RAGDOLL</code> while the match is <code>PLAYING</code>. A goal can freeze the match while players remain in their current physical state for presentation.</p>
+
+<h2>02 — Match State Machine</h2>
+<table>
+<tr><th>State</th><th>Authority</th><th>Gameplay</th></tr>
+<tr><td>BOOT</td><td>MatchController</td><td>Initialize rules and dependencies.</td></tr>
+<tr><td>LOBBY</td><td>MatchController</td><td>Players connect/select/ready.</td></tr>
+<tr><td>LOADING</td><td>MatchController</td><td>Load arena and spawn configuration.</td></tr>
+<tr><td>COUNTDOWN</td><td>MatchController</td><td>Freeze active play; prepare kickoff.</td></tr>
+<tr><td>PLAYING</td><td>MatchController</td><td>Normal gameplay and scoring.</td></tr>
+<tr><td>GOAL</td><td>MatchController</td><td>Lock scoring, record goal, present event.</td></tr>
+<tr><td>RESET</td><td>MatchController</td><td>Reset ball, players and kickoff configuration.</td></tr>
+<tr><td>MATCH END</td><td>MatchController</td><td>Stop active scoring and determine result.</td></tr>
+<tr><td>RESULTS</td><td>MatchController</td><td>Expose final score/result.</td></tr>
+</table>
+
+<h2>03 — Match Authority</h2>
+<p>The server is authoritative for all match-critical outcomes.</p>
+<pre>GAMEPLAY EVENT
+      ↓
+SERVER MATCH RULES
+      ↓
+VALIDATE
+      ↓
+UPDATE MATCH STATE
+      ↓
+EMIT MATCH EVENT
+      ↓
+REPLICATE RESULT</pre>
+<ul class="check">
+<li>Goal validation</li>
+<li>Score</li>
+<li>Match timer</li>
+<li>Kickoff/reset</li>
+<li>Match end</li>
+<li>Victory condition</li>
+<li>Critical boundary events</li>
+</ul>
+
+<h2>04 — Goal Resolution</h2>
+<p>A goal is not simply a trigger callback. Treat it as a deterministic gameplay event.</p>
+<pre>BALL / GOAL TRIGGER
+        ↓
+GOAL CANDIDATE
+        ↓
+VALIDATE MATCH STATE
+        ↓
+VALIDATE BALL STATE
+        ↓
+DETERMINE SCORING TEAM
+        ↓
+LOCK SCORING
+        ↓
+INCREMENT SCORE
+        ↓
+EMIT GOAL EVENT
+        ↓
+GOAL PRESENTATION
+        ↓
+RESET</pre>
+<div class="rule warning"><strong>Important:</strong> Presentation must never decide whether a goal happened. The authoritative match rules layer decides first; camera, audio, VFX and UI react afterward.</div>
+
+<h2>05 — Goal Lock</h2>
+<p>Once a goal is authoritatively resolved, prevent duplicate scoring while the match enters the <code>GOAL</code> state.</p>
+<table><tr><th>During GOAL</th><th>Rule</th></tr>
+<tr><td>Score</td><td>Cannot increment again.</td></tr>
+<tr><td>Goal detection</td><td>Ignored or gated.</td></tr>
+<tr><td>Normal scoring actions</td><td>Disabled for the reset phase.</td></tr>
+<tr><td>Presentation</td><td>Allowed.</td></tr></table>
+
+<h2>06 — Kickoff & Reset</h2>
+<pre>GOAL / MATCH RESET
+        ↓
+Clear transient match events
+        ↓
+Reset ball
+        ↓
+Reset player positions
+        ↓
+Reset player action/state as required
+        ↓
+Choose kickoff team
+        ↓
+Place ball
+        ↓
+COUNTDOWN
+        ↓
+PLAYING</pre>
+<p>Reset must be deterministic. Do not rely on whatever physical state happened to remain after the goal.</p>
+
+<h2>07 — Boundaries & Ball Out</h2>
+<p>Boundary logic must be explicit and separated from generic world collision.</p>
+<table><tr><th>Event</th><th>Possible rule layer response</th></tr>
+<tr><td>Ball crosses touchline</td><td>Stop/reset ball and start configured restart.</td></tr>
+<tr><td>Ball crosses goal line outside goal</td><td>Restart according to configured rule.</td></tr>
+<tr><td>Player leaves legal arena</td><td>Constrain, respawn or recover according to arena rules.</td></tr>
+<tr><td>Ball enters goal volume</td><td>Run goal resolution.</td></tr></table>
+<p>The exact restart types are deliberately data-driven so future modes can change them without rewriting the MatchController.</p>
+
+<h2>08 — Timer</h2>
+<p>The timer belongs to authoritative match state, not UI.</p>
+<pre>SERVER MATCH CLOCK
+        ↓
+MATCH TIME REMAINING
+        ↓
+HUD / PRESENTATION</pre>
+<p>Rendering a timer is presentation. Deciding whether the match has ended is match authority.</p>
+<div class="rule"><strong>Rule:</strong> Never let client frame rate determine the official match clock.</div>
+
+<h2>09 — End Condition</h2>
+<p>Match end must be a single deterministic evaluation.</p>
+<pre>TIME / MODE END EVENT
+        ↓
+STOP SCORING
+        ↓
+EVALUATE RESULT
+        ↓
+WIN / LOSS / DRAW
+        ↓
+MATCH END
+        ↓
+RESULTS</pre>
+<table><tr><th>Condition</th><th>Result</th></tr>
+<tr><td>Team A score > Team B</td><td>Team A wins.</td></tr>
+<tr><td>Team B score > Team A</td><td>Team B wins.</td></tr>
+<tr><td>Equal score</td><td>Draw, unless the mode defines another resolution.</td></tr></table>
+
+<h2>10 — Overtime / Tiebreaker Hook</h2>
+<p>Do not hard-code overtime into the core match flow. Expose a rule policy.</p>
+<pre>REGULATION END
+      ↓
+RESULT?
+ ├── YES → MATCH END
+ └── NO  → OVERTIME POLICY
+             ↓
+        EXTRA PERIOD / GOLDEN GOAL / PENALTIES / DRAW</pre>
+<p>The core system should support these policies without assuming which one the final game mode uses.</p>
+
+<h2>11 — Match Events</h2>
+<p>Use semantic events instead of direct cross-system mutation.</p>
+<pre>GoalScored
+BallOut
+KickoffStarted
+CountdownStarted
+MatchStarted
+MatchTimeExpired
+MatchEnded
+ScoreChanged
+ResetStarted</pre>
+<p>Consumers may include UI, audio, VFX, camera, analytics and networking.</p>
+
+<h2>12 — Rules vs Presentation</h2>
+<table><tr><th>Rules Own</th><th>Presentation Owns</th></tr>
+<tr><td>Goal happened</td><td>Goal animation</td></tr>
+<tr><td>Score changed</td><td>Scoreboard animation</td></tr>
+<tr><td>Countdown state</td><td>Countdown visuals/audio</td></tr>
+<tr><td>Match ended</td><td>Victory/defeat presentation</td></tr>
+<tr><td>Kickoff started</td><td>Camera/UI feedback</td></tr></table>
+
+<h2>13 — Data-Driven Match Rules</h2>
+<p>Keep mode-specific values outside the core controller.</p>
+<pre>MatchRulesData
+├── MatchDuration
+├── TeamCount
+├── PlayersPerTeam
+├── ScoreLimit
+├── KickoffPolicy
+├── BoundaryPolicy
+├── OvertimePolicy
+├── RespawnPolicy
+└── EndCondition</pre>
+
+<h2>14 — Anti-Patterns</h2>
+<ul class="no">
+<li>Goal decided by client UI.</li>
+<li>Score modified by player scripts.</li>
+<li>Timer owned by HUD.</li>
+<li>Physics callback directly changing score without validation.</li>
+<li>Camera deciding match state.</li>
+<li>Hard-coded rules inside individual actions.</li>
+<li>Using arbitrary booleans instead of explicit match states.</li>
+</ul>
+
+<h2>15 — Definition of Done</h2>
+<ul class="check">
+<li>Match state is explicit and authoritative.</li>
+<li>Goal resolution is deterministic.</li>
+<li>Duplicate goals are impossible.</li>
+<li>Score exists only in match authority.</li>
+<li>Timer cannot be forged by a client.</li>
+<li>Reset produces a known deterministic state.</li>
+<li>Match end is deterministic.</li>
+<li>Mode-specific rules are data-driven.</li>
+<li>Presentation reacts to semantic match events.</li>
+</ul>
+
+<div class="rule"><strong>FINAL PRINCIPLE</strong><br>The Match Rules system should be able to explain, at any instant, <strong>why the match is in its current state and what event is allowed to happen next.</strong></div>
+</main></body></html>

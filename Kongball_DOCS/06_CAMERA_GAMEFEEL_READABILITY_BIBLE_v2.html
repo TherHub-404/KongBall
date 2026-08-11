@@ -1,0 +1,195 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Camera, Game Feel & Readability Bible</title>
+<style>
+:root{--bg:#0b0d10;--panel:#11151a;--panel2:#171c22;--text:#eef2f6;--muted:#a8b0ba;--line:#29313a;--accent:#7ee787;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}
+main{max-width:1080px;margin:auto;padding:56px 28px 100px}h1{font-size:48px;line-height:1.05;letter-spacing:-1.5px;margin:0 0 16px}
+h2{font-size:30px;line-height:1.15;margin:58px 0 18px;padding-top:18px;border-top:1px solid var(--line)}h3{font-size:20px;margin-top:32px}
+p,li{color:#d8dde3}strong{color:#fff}.hero{background:linear-gradient(145deg,#151b21,#0d1115);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:35px}
+.kicker{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:13px}.subtitle{font-size:20px;color:var(--muted);max-width:850px}
+.rule{border-left:4px solid var(--accent);background:var(--panel);padding:18px 20px;margin:22px 0;border-radius:0 12px 12px 0}.warning{border-left-color:var(--warn)}.danger{border-left-color:var(--danger)}
+pre{background:#07090b;border:1px solid var(--line);padding:20px;border-radius:12px;overflow:auto;color:#d9e2ea;line-height:1.45}code{background:#171c22;padding:2px 6px;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:20px 0;background:var(--panel)}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{color:#fff;background:var(--panel2)}td{color:#cfd6dd}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin:3px;color:#dce3e9;font-size:13px}.small{font-size:14px;color:var(--muted)}
+.check{list-style:"✓  "}.no{list-style:"✕  "}
+</style>
+</head><body><main>
+<section class="hero"><div class="kicker">Gameplay Engineering Bible · KB 06</div><h1>Camera, Game Feel & Readability</h1>
+<p class="subtitle">The presentation layer that turns technically correct gameplay into an experience the player can immediately understand, control and enjoy.</p>
+<p><strong>Design target:</strong> The player should always know where they are, where the ball is, what just happened and what they can do next — while every important interaction feels impactful.</p></section>
+
+<div class="rule"><strong>CORE PRINCIPLE</strong><br>Camera, animation, VFX, audio and haptics are not decoration. They are part of the <strong>control system</strong> because they determine how the player perceives gameplay.</div>
+
+<h2>01 — The Perception Loop</h2>
+<pre>PLAYER INPUT
+ ↓
+GAMEPLAY RESULT
+ ↓
+VISUAL / AUDIO / HAPTIC FEEDBACK
+ ↓
+PLAYER UNDERSTANDS RESULT
+ ↓
+NEXT INPUT</pre>
+<p>If the feedback is delayed, ambiguous or visually noisy, the game feels unresponsive even when the underlying code is correct.</p>
+
+<h2>02 — Camera Responsibilities</h2>
+<p>The camera must provide:</p>
+<ul><li>Player control orientation.</li><li>Ball awareness.</li><li>Spatial awareness.</li><li>Opponent awareness.</li><li>Goal awareness.</li><li>Readable framing.</li></ul>
+
+<h2>03 — Camera Architecture</h2>
+<pre>Camera Input
+ ↓
+Camera Intent
+ ↓
+Target Selection
+ ↓
+Desired Position / Rotation
+ ↓
+Collision Handling
+ ↓
+Smoothing
+ ↓
+Presentation</pre>
+<p>Camera should consume gameplay state. Gameplay systems should emit semantic events rather than directly owning camera transforms.</p>
+
+<h2>04 — Third-Person Follow</h2>
+<p>Expose:</p>
+<ul><li>Follow distance.</li><li>Height.</li><li>Pitch.</li><li>Yaw.</li><li>Follow sharpness.</li><li>Rotation sensitivity.</li><li>Look-ahead.</li></ul>
+<p>Do not add smoothing merely because smoothing looks "polished." Every delay has a gameplay cost.</p>
+
+<h2>05 — Camera-Relative Movement</h2>
+<p>Movement and camera must agree on what forward means.</p>
+<pre>Camera Forward + Input
+        ↓
+Flatten to ground plane
+        ↓
+Desired movement direction
+        ↓
+Character movement</pre>
+<p>If the camera rotates and the character suddenly feels like controls changed, the player loses trust.</p>
+
+<h2>06 — Ball Awareness</h2>
+<p>Football introduces a second critical object. The camera must keep enough context to locate the ball without constantly snapping toward it.</p>
+<p>Possible signals:</p>
+<ul><li>Distance to ball.</li><li>Ball screen position.</li><li>Ball velocity.</li><li>Player velocity.</li><li>Goal direction.</li><li>Current action.</li></ul>
+
+<h2>07 — Dynamic Framing</h2>
+<p>Use subtle dynamic framing:</p>
+<pre>NORMAL
+Player centered
+
+BALL FAR
+Slightly widen framing
+
+BALL AHEAD
+Look-ahead
+
+HIGH BALL
+Increase vertical awareness
+
+MAJOR IMPACT
+Temporary presentation adjustment</pre>
+<p>Changes should be smooth and predictable.</p>
+
+<h2>08 — Camera Collision</h2>
+<p>The camera must not pass through the environment or create violent snaps.</p>
+<p>Use collision avoidance with controlled minimum distance and smoothing. Test corners, walls, goals and crowded player clusters.</p>
+
+<h2>09 — Player Readability</h2>
+<p>Our cartoon monkeys must remain readable under chaotic conditions.</p>
+<ul class="check"><li>Strong silhouette.</li><li>Team color.</li><li>Readable body pose.</li><li>Visible ball.</li><li>Clear opponent/team distinction.</li><li>Readable action state.</li></ul>
+
+<h2>10 — Visual Hierarchy</h2>
+<table><tr><th>Priority</th><th>Object</th></tr><tr><td>1</td><td>Player / immediate threat</td></tr><tr><td>2</td><td>Ball</td></tr><tr><td>3</td><td>Relevant opponents/teammates</td></tr><tr><td>4</td><td>Goal / tactical destination</td></tr><tr><td>5</td><td>Environment decoration</td></tr></table>
+<p>Decoration must never compete with gameplay-critical information.</p>
+
+<h2>11 — Game Feel</h2>
+<p>Game feel is the coordinated response to an action:</p>
+<pre>PLAYER ACTION
+ ↓
+GAMEPLAY EVENT
+ ├── Animation
+ ├── VFX
+ ├── SFX
+ ├── Camera
+ └── Haptics</pre>
+<p>These systems should react to the same semantic event so that the experience feels like one coherent response.</p>
+
+<h2>12 — Hitstop</h2>
+<p>Very short impact pauses can emphasize major contacts. Use sparingly, especially in multiplayer.</p>
+<p>Hitstop should enhance:</p>
+<ul><li>Power.</li><li>Contact clarity.</li><li>Comedy.</li></ul>
+<p>It must not make the controls feel sticky.</p>
+
+<h2>13 — Camera Shake</h2>
+<p>Camera shake is feedback, not noise.</p>
+<p>Parameters:</p>
+<ul><li>Amplitude.</li><li>Duration.</li><li>Frequency.</li><li>Direction.</li><li>Falloff.</li></ul>
+<p>Small impacts should have small responses. Reserve strong shake for rare moments.</p>
+
+<h2>14 — Haptics</h2>
+<p>Controller vibration should correspond to semantic intensity:</p>
+<pre>SOFT CONTACT → subtle
+KICK → directional pulse
+STRONG TACKLE → strong short pulse
+GOAL → celebratory pattern</pre>
+<p>Never use vibration continuously for ordinary movement.</p>
+
+<h2>15 — Audio as Spatial Feedback</h2>
+<p>Audio can communicate information the camera cannot:</p>
+<ul><li>Ball impact.</li><li>Opponent tackle.</li><li>Kick direction.</li><li>Goal.</li><li>Collision.</li><li>Danger.</li></ul>
+<p>Use spatialization where useful and avoid turning the soundscape into constant noise.</p>
+
+<h2>16 — VFX Rules</h2>
+<p>VFX should explain an event:</p>
+<ul><li>Ball trail communicates speed.</li><li>Impact burst communicates contact.</li><li>Dust communicates movement/landing.</li><li>Stun effect communicates state.</li></ul>
+<div class="rule warning">Never let VFX hide the ball or the player during a critical interaction.</div>
+
+<h2>17 — Cartoon Monkey Presentation</h2>
+<p>The monkey's exaggerated body can carry game feel:</p>
+<ul><li>Lean during acceleration.</li><li>Head lag.</li><li>Arm flail during impacts.</li><li>Tail follow-through.</li><li>Squash on landing.</li><li>Facial reaction on strong events.</li></ul>
+<p>The visual exaggeration should amplify the physical rules already defined by the gameplay system.</p>
+
+<h2>18 — Readability Under Chaos</h2>
+<p>Test with:</p>
+<div><span class="pill">8 players</span><span class="pill">12 players</span><span class="pill">20 players</span><span class="pill">multiple VFX</span><span class="pill">ball airborne</span></div>
+<p>If the player cannot identify the ball or their own monkey, reduce visual complexity before adding more indicators.</p>
+
+<h2>19 — Camera Modes</h2>
+<ul><li>Gameplay.</li><li>Respawn.</li><li>Goal.</li><li>Match intro.</li><li>Match result.</li><li>Celebration.</li></ul>
+<p>Mode changes must be explicit and driven by match state.</p>
+
+<h2>20 — Accessibility</h2>
+<ul><li>Camera sensitivity.</li><li>Optional reduced camera shake.</li><li>Reduced motion.</li><li>Colorblind-friendly team distinction.</li><li>Vibration toggle.</li><li>UI scale.</li></ul>
+
+<h2>21 — Camera / Feel Lab</h2>
+<pre>[ NORMAL MOVEMENT ]
+[ SPRINT ]
+[ TURN ]
+[ JUMP ]
+[ BALL CHASE ]
+[ HIGH BALL ]
+[ TACKLE ]
+[ RAGDOLL ]
+[ GOAL ]
+[ CROWD CHAOS ]</pre>
+
+<h2>22 — Automated Tests</h2>
+<ul class="check"><li>Camera never clips through critical geometry.</li><li>Camera-relative movement remains consistent after camera rotation.</li><li>Ball remains readable during high-speed play.</li><li>Major impacts trigger coherent presentation events.</li><li>VFX cannot permanently obscure the ball.</li><li>Camera shake can be disabled independently.</li></ul>
+
+<h2>23 — Anti-Patterns</h2>
+<ul class="no"><li>Camera directly modifying gameplay movement.</li><li>Huge camera lag disguised as smoothing.</li><li>Camera constantly snapping between player and ball.</li><li>VFX used to compensate for unclear gameplay.</li><li>Excessive shake on ordinary collisions.</li><li>Audio/VFX systems each inventing their own impact timing.</li></ul>
+
+<h2>24 — Senior Developer Decision Rules</h2>
+<div class="rule"><strong>01.</strong> The camera is part of gameplay.</div>
+<div class="rule"><strong>02.</strong> Responsiveness beats cinematic smoothness during active play.</div>
+<div class="rule"><strong>03.</strong> The ball must remain readable during chaos.</div>
+<div class="rule"><strong>04.</strong> Feedback should be synchronized around semantic gameplay events.</div>
+<div class="rule"><strong>05.</strong> Every visual effect has a readability cost.</div>
+<div class="rule"><strong>06.</strong> Never fix bad gameplay with camera tricks.</div>
+<div class="rule"><strong>07.</strong> Cartoon exaggeration should increase clarity, not visual noise.</div>
+
+<h2>25 — Definition of Done</h2>
+<ul class="check"><li>Player can orient themselves instantly.</li><li>Ball remains readable.</li><li>Camera follows without fighting input.</li><li>Impacts feel powerful without excessive shake.</li><li>Animation, VFX, SFX and haptics respond coherently.</li><li>Monkey silhouettes remain readable with the target player count.</li><li>Accessibility controls exist for major motion effects.</li></ul>
+
+<div class="rule"><strong>FINAL PRINCIPLE</strong><br>Perfect game feel is not a collection of effects. It is the absence of doubt between what the player did, what the game did, and what the player perceived.</div>
+</main></body></html>

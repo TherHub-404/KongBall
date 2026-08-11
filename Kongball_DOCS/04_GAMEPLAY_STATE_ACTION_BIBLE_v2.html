@@ -1,0 +1,185 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gameplay State & Action System</title>
+<style>
+:root{--bg:#0b0d10;--panel:#11151a;--panel2:#171c22;--text:#eef2f6;--muted:#a8b0ba;--line:#29313a;--accent:#7ee787;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}
+main{max-width:1080px;margin:auto;padding:56px 28px 100px}h1{font-size:48px;line-height:1.05;letter-spacing:-1.5px;margin:0 0 16px}
+h2{font-size:30px;line-height:1.15;margin:58px 0 18px;padding-top:18px;border-top:1px solid var(--line)}h3{font-size:20px;margin-top:32px}
+p,li{color:#d8dde3}strong{color:#fff}.hero{background:linear-gradient(145deg,#151b21,#0d1115);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:35px}
+.kicker{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:13px}.subtitle{font-size:20px;color:var(--muted);max-width:850px}
+.rule{border-left:4px solid var(--accent);background:var(--panel);padding:18px 20px;margin:22px 0;border-radius:0 12px 12px 0}.warning{border-left-color:var(--warn)}.danger{border-left-color:var(--danger)}
+pre{background:#07090b;border:1px solid var(--line);padding:20px;border-radius:12px;overflow:auto;color:#d9e2ea;line-height:1.45}code{background:#171c22;padding:2px 6px;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:20px 0;background:var(--panel)}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{color:#fff;background:var(--panel2)}td{color:#cfd6dd}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin:3px;color:#dce3e9;font-size:13px}.small{font-size:14px;color:var(--muted)}
+.check{list-style:"✓  "}.no{list-style:"✕  "}
+</style>
+</head><body><main>
+<section class="hero"><div class="kicker">Gameplay Engineering Bible · KB 04</div><h1>Gameplay State & Action System</h1>
+<p class="subtitle">The control layer that coordinates movement, physics, ball interaction and character reactions into one coherent gameplay model.</p>
+<p><strong>Design target:</strong> No system should fight another system. At any instant, the game must know what the player is allowed to do, what has authority, and what happens next.</p></section>
+
+<div class="rule"><strong>CORE PRINCIPLE</strong><br>The player is not a collection of independent scripts. The player is a <strong>stateful gameplay entity</strong> with explicit authority, transitions and actions.</div>
+
+<h2>01 — Why a State System Exists</h2>
+<p>Without explicit state ownership, a typical prototype becomes:</p>
+<pre>Movement script → moves
+Kick script → moves
+Tackle script → moves
+Ragdoll script → moves
+Animation event → moves
+Network correction → moves</pre>
+<p>This creates race conditions and impossible combinations. The state/action system decides which system is allowed to control gameplay.</p>
+
+<h2>02 — Player State Model</h2>
+<pre>NORMAL
+ ├── WALK / RUN
+ ├── SPRINT
+ ├── KICK
+ ├── TACKLE
+ └── JUMP
+
+AIRBORNE
+ ├── JUMP
+ └── FALL
+
+IMPACT
+ ├── STAGGER
+ ├── STUMBLE
+ ├── KNOCKBACK
+ └── RAGDOLL
+
+RECOVERY
+ └── NORMAL</pre>
+<p>Do not create a giant enum that tries to represent every combination. Separate high-level state from orthogonal flags/data where appropriate.</p>
+
+<h2>03 — State Authority</h2>
+<p>At any moment there must be one clear answer to:</p>
+<ul><li>Who controls horizontal movement?</li><li>Who controls vertical movement?</li><li>Can input be accepted?</li><li>Can the player start another action?</li><li>Can the player be interrupted?</li><li>Is the player invulnerable?</li></ul>
+
+<h2>04 — State Priority</h2>
+<pre>NORMAL LOCOMOTION
+       ↓
+ACTION
+       ↓
+IMPACT
+       ↓
+KNOCKBACK / RAGDOLL
+       ↓
+RECOVERY</pre>
+<p>Higher-priority states can temporarily override lower-priority states.</p>
+<div class="rule warning"><strong>Do not use arbitrary booleans as hidden priority.</strong> A dozen flags such as <code>isKicking</code>, <code>isStunned</code>, <code>isFalling</code> and <code>canMove</code> eventually create contradictory states.</div>
+
+<h2>05 — Actions vs States</h2>
+<p>A <strong>state</strong> describes the current gameplay condition. An <strong>action</strong> is something the player attempts to do.</p>
+<table><tr><th>Action</th><th>Possible result</th></tr><tr><td>Kick</td><td>Kick state → ball launch → recovery</td></tr><tr><td>Tackle</td><td>Tackle → hit / miss → recovery</td></tr><tr><td>Jump</td><td>Airborne state</td></tr><tr><td>Move</td><td>Locomotion update</td></tr></table>
+
+<h2>06 — Action Pipeline</h2>
+<pre>INPUT
+ ↓
+INTENT
+ ↓
+CAN ACTION?
+ ↓
+START ACTION
+ ↓
+WINDUP
+ ↓
+ACTIVE
+ ↓
+RESOLUTION
+ ↓
+RECOVERY
+ ↓
+RETURN TO VALID STATE</pre>
+
+<h2>07 — Action Cancellation</h2>
+<p>Cancellation must be explicit. Examples:</p>
+<ul><li>Can sprint cancel into tackle?</li><li>Can kick cancel into jump?</li><li>Can a tackle be interrupted by knockback?</li><li>Can an impact interrupt a kick before its active frame?</li></ul>
+<p>Define cancellation windows instead of allowing arbitrary script overrides.</p>
+
+<h2>08 — Input Buffering</h2>
+<p>For short actions, accept input slightly before the character becomes available.</p>
+<p>Examples: jump near landing, kick immediately after recovery, tackle after sprint.</p>
+<p>Buffer duration must be short and configurable. Buffering should make controls forgiving, not queue a whole combo system accidentally.</p>
+
+<h2>09 — Interruptions</h2>
+<p>Every action should declare whether it can be interrupted by:</p>
+<ul><li>Player input.</li><li>Environment collision.</li><li>Tackle.</li><li>Knockback.</li><li>Ragdoll.</li><li>Match events.</li></ul>
+
+<h2>10 — Gameplay Commands</h2>
+<p>Prefer commands/events between systems instead of direct cross-system mutation.</p>
+<pre>TackleHit
+ ↓
+ImpactResolver
+ ↓
+ApplyKnockbackCommand
+ ↓
+PlayerState
+ ↓
+MovementMotor</pre>
+<p>This keeps the architecture testable and prevents circular dependencies.</p>
+
+<h2>11 — Action Data</h2>
+<p>Actions should be data-driven where possible:</p>
+<ul><li>Windup.</li><li>Active window.</li><li>Recovery.</li><li>Cooldown.</li><li>Hitbox.</li><li>Allowed states.</li><li>Interrupt rules.</li><li>Impact tier.</li><li>Animation/VFX/SFX references.</li></ul>
+
+<h2>12 — Match State</h2>
+<pre>BOOT
+ ↓
+LOBBY
+ ↓
+LOADING
+ ↓
+COUNTDOWN
+ ↓
+PLAYING
+ ↓
+GOAL
+ ↓
+RESET
+ ↓
+PLAYING
+ ↓
+MATCH END
+ ↓
+RESULTS</pre>
+<p>Match state must be independent from player state.</p>
+
+<h2>13 — Global Authority</h2>
+<p>Some events override player state entirely:</p>
+<ul><li>Goal.</li><li>Match end.</li><li>Respawn.</li><li>Round reset.</li><li>Pause if supported.</li></ul>
+
+<h2>14 — Deterministic Transitions</h2>
+<p>For the same state + action + event, the transition should be predictable. Avoid hidden dependencies on frame timing.</p>
+
+<h2>15 — Animation Integration</h2>
+<p>State changes emit semantic animation parameters. Animation does not become the owner of gameplay state.</p>
+<pre>Gameplay State
+ ↓
+Animation State
+ ↓
+Visual Motion</pre>
+
+<h2>16 — Debug State Inspector</h2>
+<p>Build a live inspector showing:</p>
+<ul><li>Current state.</li><li>Previous state.</li><li>Current action.</li><li>Action phase.</li><li>Time remaining.</li><li>Allowed actions.</li><li>Interruptible?</li><li>Authority source.</li></ul>
+
+<h2>17 — Automated Tests</h2>
+<ul class="check"><li>Illegal actions are rejected.</li><li>Higher-priority impacts override locomotion correctly.</li><li>Every action exits its state.</li><li>Every ragdoll has recovery.</li><li>Input buffering does not execute stale actions.</li><li>Match state cannot be modified by local player scripts.</li><li>Same event sequence produces the same state transitions.</li></ul>
+
+<h2>18 — Anti-Patterns</h2>
+<ul class="no"><li>Dozens of interacting booleans defining hidden state.</li><li>Directly setting another system's transform from an action script.</li><li>Animation events deciding whether a tackle succeeded.</li><li>Cooldown logic scattered across multiple components.</li><li>Actions with no recovery path.</li><li>State transitions that depend on random frame timing.</li></ul>
+
+<h2>19 — Senior Developer Decision Rules</h2>
+<div class="rule"><strong>01.</strong> Every gameplay state must have an owner.</div>
+<div class="rule"><strong>02.</strong> Every action must have a lifecycle.</div>
+<div class="rule"><strong>03.</strong> Every interruption must be explicit.</div>
+<div class="rule"><strong>04.</strong> Higher-priority gameplay events override lower-priority locomotion.</div>
+<div class="rule"><strong>05.</strong> Never solve state conflicts with another boolean.</div>
+<div class="rule"><strong>06.</strong> Gameplay state is authoritative; animation is presentation.</div>
+<div class="rule"><strong>07.</strong> If Claude cannot draw the state transition, the state system is probably too implicit.</div>
+
+<h2>20 — Definition of Done</h2>
+<ul class="check"><li>Every action has clear phases and transitions.</li><li>No scripts fight for movement authority.</li><li>Interruptions are deterministic.</li><li>State transitions are debug-visible.</li><li>Actions are data-driven where useful.</li><li>Player state and match state are cleanly separated.</li><li>The system can support new actions without rewriting existing actions.</li></ul>
+
+<div class="rule"><strong>FINAL PRINCIPLE</strong><br>A great state system makes complex gameplay feel simple because the player never sees the machinery. They simply press a button and the game responds correctly.</div>
+</main></body></html>

@@ -1,0 +1,268 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Third-Person Arcade Football — Ball & Player Interaction Bible</title>
+<style>
+:root{--bg:#0b0d10;--panel:#11151a;--panel2:#171c22;--text:#eef2f6;--muted:#a8b0ba;--line:#29313a;--accent:#7ee787;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}
+main{max-width:1080px;margin:auto;padding:56px 28px 100px}h1{font-size:48px;line-height:1.05;letter-spacing:-1.5px;margin:0 0 16px}
+h2{font-size:30px;line-height:1.15;margin:58px 0 18px;padding-top:18px;border-top:1px solid var(--line)}h3{font-size:20px;margin-top:32px}
+p,li{color:#d8dde3}strong{color:#fff}.hero{background:linear-gradient(145deg,#151b21,#0d1115);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:35px}
+.kicker{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:13px}.subtitle{font-size:20px;color:var(--muted);max-width:850px}
+.rule{border-left:4px solid var(--accent);background:var(--panel);padding:18px 20px;margin:22px 0;border-radius:0 12px 12px 0}.warning{border-left-color:var(--warn)}.danger{border-left-color:var(--danger)}
+pre{background:#07090b;border:1px solid var(--line);padding:20px;border-radius:12px;overflow:auto;color:#d9e2ea;line-height:1.45}code{background:#171c22;padding:2px 6px;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:20px 0;background:var(--panel)}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{color:#fff;background:var(--panel2)}td{color:#cfd6dd}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin:3px;color:#dce3e9;font-size:13px}.small{font-size:14px;color:var(--muted)}
+.check{list-style:"✓  "}.no{list-style:"✕  "}
+</style>
+</head><body><main>
+<section class="hero"><div class="kicker">Gameplay Engineering Bible · KB 02</div>
+<h1>Ball & Player Interaction</h1>
+<p class="subtitle">A senior-level specification for making the football feel responsive, readable, forgiving and deeply satisfying without turning the game into a football simulator.</p>
+<p><strong>Design target:</strong> The player should always feel that they caused the ball's outcome, even though the game intelligently assists contact and presentation.</p></section>
+
+<div class="rule"><strong>CORE PRINCIPLE</strong><br>We do not simulate a football being kicked by a perfectly accurate human foot. We simulate the <strong>player's intention to interact with the ball</strong>, then use physics to make the resulting motion believable.</div>
+
+<h2>01 — The Ball Is a Gameplay Object</h2>
+<p>The ball is simultaneously a physical object and a gameplay object. Physics determines how it travels; gameplay determines when and why it receives an impulse.</p>
+<pre>PLAYER INPUT
+    ↓
+PLAYER INTENT
+    ↓
+INTERACTION QUERY
+    ↓
+VALIDATION
+    ↓
+ASSIST / AIM
+    ↓
+BALL ACTION
+    ↓
+PHYSICS SIMULATION
+    ↓
+PRESENTATION</pre>
+<p>Never make the ball a child of the player transform for normal play. Never put authoritative ball logic inside <code>PlayerController</code>.</p>
+
+<h2>02 — Ball State Machine</h2>
+<pre>FREE
+ ↓
+CONTACT
+ ↓
+CONTROLLED
+ ↓
+ACTION
+ ├── KICK
+ ├── PASS
+ ├── SHOT
+ ├── HEADER
+ └── TACKLE CONTACT
+ ↓
+AIRBORNE / ROLLING
+ ↓
+BOUNCE / DEFLECTION
+ ↓
+FREE</pre>
+<p>States must be explicit enough that Claude can reason about ownership, valid actions and transitions without searching through unrelated scripts.</p>
+
+<h2>03 — Interaction Philosophy</h2>
+<p>There are three separate questions:</p>
+<ol><li><strong>Can I interact with the ball?</strong></li><li><strong>What did I intend to do?</strong></li><li><strong>What physical result should that intent create?</strong></li></ol>
+<p>Do not collapse these into one collision callback.</p>
+
+<h2>04 — Interaction Zones</h2>
+<table><tr><th>Zone</th><th>Purpose</th></tr>
+<tr><td>Control Zone</td><td>Detect a ball close enough for a first touch or dribble interaction.</td></tr>
+<tr><td>Kick Zone</td><td>Forgive small positional errors when kicking.</td></tr>
+<tr><td>Strong Kick Zone</td><td>Optional sweet spot for high-quality contact.</td></tr>
+<tr><td>Header Zone</td><td>Dedicated airborne/head interaction.</td></tr>
+<tr><td>Tackle Zone</td><td>Allows an action to interact with player and/or ball.</td></tr></table>
+<p>These are gameplay volumes, not anatomical colliders.</p>
+
+<h2>05 — Ball Magnetism</h2>
+<p>Magnetism exists to correct small execution errors, not to play football for the player.</p>
+<p>Potential inputs:</p><ul><li>Ball distance.</li><li>Angle between player intent and ball.</li><li>Player velocity.</li><li>Ball velocity.</li><li>Current action.</li><li>Target direction.</li><li>Assist level.</li></ul>
+<div class="rule warning"><strong>Rule:</strong> Assist should increase the probability of clean contact, not guarantee a successful shot, pass or tackle.</div>
+
+<h2>06 — Aim Assist</h2>
+<p>Think of aim assist as a bounded correction around the player's intended vector.</p>
+<pre>RAW AIM
+  ↓
+Find acceptable candidate directions
+  ↓
+Score candidates
+  ↓
+Choose best candidate within assist cone
+  ↓
+Apply bounded correction
+  ↓
+Launch ball</pre>
+<p>Never snap to a target outside a sensible angular cone. Stronger assistance should make controls accessible, not remove skill.</p>
+
+<h2>07 — Kick Architecture</h2>
+<pre>Kick Input
+ ↓
+Check Action Availability
+ ↓
+Enter Windup
+ ↓
+Active Contact Window
+ ↓
+Find Ball
+ ↓
+Resolve Contact
+ ↓
+Calculate Launch
+ ↓
+Apply Ball Command
+ ↓
+Recovery</pre>
+<p>Keep timing explicit. A kick should have <strong>windup, active, recovery</strong> phases so animation, networking, hitboxes and gameplay all agree.</p>
+
+<h2>08 — Kick Parameters</h2>
+<p>Centralize tuning values:</p>
+<ul><li>Kick power.</li><li>Vertical lift.</li><li>Direction assist.</li><li>Contact radius.</li><li>Sweet-spot radius.</li><li>Windup duration.</li><li>Active window.</li><li>Recovery duration.</li><li>Maximum ball speed.</li><li>Spin amount.</li></ul>
+<p>Do not scatter constants across scripts.</p>
+
+<h2>09 — Ball Launch Model</h2>
+<p>A launch should be generated from gameplay intent plus physical state.</p>
+<pre>Launch Direction =
+  Player Intent
+  + bounded assist
+  + contextual correction
+
+Launch Speed =
+  action power
+  × contact quality
+  × contextual modifiers</pre>
+<p>Then the ball enters normal simulation.</p>
+
+<h2>10 — Contact Quality</h2>
+<p>Not every contact needs to be binary. A useful model can produce:</p>
+<table><tr><th>Quality</th><th>Result</th></tr><tr><td>Poor</td><td>Weak touch / awkward deflection.</td></tr>
+<tr><td>Normal</td><td>Expected kick.</td></tr><tr><td>Clean</td><td>Strong, accurate contact.</td></tr><tr><td>Perfect</td><td>Optional advanced mechanic with strong feedback.</td></tr></table>
+<p>Use this carefully. The player must understand why the result differed.</p>
+
+<h2>11 — First Touch</h2>
+<p>First touch should tame the incoming ball enough to preserve playability while allowing bad positioning to create mistakes.</p>
+<pre>Incoming Ball
+ ↓
+Evaluate relative velocity
+ ↓
+Evaluate player intent
+ ↓
+Choose touch target
+ ↓
+Apply controlled correction
+ ↓
+Continue simulation</pre>
+<p>Do not simply attach the ball to the player's foot.</p>
+
+<h2>12 — Dribbling / Soft Possession</h2>
+<p>If dribbling exists, use a soft target rather than a hard parent-child relationship.</p>
+<p>The ball should orbit or lead the player with controlled lag. It must be possible to lose control through collisions, excessive speed, poor direction or tackles.</p>
+
+<h2>13 — Pass vs Shot</h2>
+<table><tr><th>Pass</th><th>Shot</th></tr><tr><td>Direction/readability prioritized.</td><td>Power/readability prioritized.</td></tr>
+<tr><td>Can favor teammate direction.</td><td>Can favor goal direction.</td></tr>
+<tr><td>Usually lower launch power.</td><td>Usually higher launch power.</td></tr></table>
+<p>Both should share the same underlying ball simulation.</p>
+
+<h2>14 — Tackle Interaction</h2>
+<pre>Tackle Input
+ ↓
+Tackle State
+ ↓
+Tackle Hitbox Active
+ ↓
+Query Ball + Players
+ ↓
+Resolve each interaction independently
+ ├── Ball only
+ ├── Player only
+ └── Ball + Player
+ ↓
+Apply Gameplay Commands</pre>
+<p>A tackle that touches both player and ball must not accidentally process the same event twice.</p>
+
+<h2>15 — Headers</h2>
+<p>Headers should use a dedicated interaction zone and authored launch model. Do not require exact collision with the visible head mesh.</p>
+
+<h2>16 — Ball vs World</h2>
+<p>Once a gameplay action launches the ball, normal physics should take over:</p>
+<ul><li>Ground friction.</li><li>Wall bounce.</li><li>Post collision.</li><li>Net interaction.</li><li>Ramp interaction.</li><li>Out-of-bounds.</li></ul>
+<p>Physics should not be bypassed simply because the ball was kicked.</p>
+
+<h2>17 — Ball Speed & Safety Limits</h2>
+<p>Set a maximum sensible velocity range. Extremely high velocities create tunnelling, unreadability and networking problems.</p>
+<div class="rule danger">Every action must have an upper bound. A sequence of collisions must never create an accidental infinite-energy ball.</div>
+
+<h2>18 — Ball Prediction</h2>
+<p>Expose short-horizon trajectory prediction for camera, UI and AI. Prediction is informational; it must not secretly become the authoritative ball path.</p>
+
+<h2>19 — Goal Detection</h2>
+<pre>Ball crosses goal trigger
+ ↓
+Validate direction / state
+ ↓
+Confirm ball is not already scored
+ ↓
+Authoritative GOAL event
+ ↓
+Freeze / reset match state
+ ↓
+Presentation</pre>
+<p>Use dedicated trigger volumes. Do not infer goals from visual mesh intersections alone.</p>
+
+<h2>20 — Out of Bounds & Recovery</h2>
+<p>Define what happens when the ball leaves play, becomes trapped or reaches an impossible state. Recovery must be deterministic and never require a developer to manually reset the scene.</p>
+
+<h2>21 — Ball Feedback</h2>
+<p>Every important interaction should have a feedback stack:</p>
+<pre>BALL EVENT
+ ├── Ball animation / motion
+ ├── VFX
+ ├── SFX
+ ├── Camera response
+ └── Haptics</pre>
+<p>Feedback communicates contact quality, direction and power.</p>
+
+<h2>22 — Readability</h2>
+<ul class="check"><li>Ball remains visible during chaos.</li><li>Fast shots are readable.</li><li>Important touches have immediate feedback.</li><li>VFX never obscure the ball for long.</li><li>Players can distinguish ball state from player collision state.</li></ul>
+
+<h2>23 — Multiplayer Authority</h2>
+<p>The client can predict local intent, but the authoritative simulation validates important ball outcomes.</p>
+<ul><li>Kick timing.</li><li>Kick position.</li><li>Ball velocity.</li><li>Goal state.</li><li>Possession state.</li><li>Impossible ball movement.</li></ul>
+
+<h2>24 — Anti-Patterns</h2>
+<ul class="no"><li>Parenting the ball to the player.</li><li>Huge invisible magnets that guarantee possession.</li><li>Putting ball logic inside movement code.</li><li>Letting animation teleport the authoritative ball.</li><li>Using random impulses for competitive actions.</li><li>Allowing multiple systems to launch the ball in the same frame without arbitration.</li></ul>
+
+<h2>25 — Ball Lab</h2>
+<pre>[ FREE ROLL ]
+[ LOW KICK ]
+[ HIGH SHOT ]
+[ WALL REBOUND ]
+[ POST HIT ]
+[ HEADER ]
+[ TACKLE ]
+[ FIRST TOUCH ]
+[ DRIBBLE ]
+[ GOAL LINE ]
+[ CORNER TRAP ]
+[ MULTI-PLAYER CONTACT ]</pre>
+
+<h2>26 — Automated Tests</h2>
+<ul class="check"><li>Same kick input produces equivalent launch within tolerance.</li><li>Ball cannot exceed configured safety speed.</li><li>Goal detection is deterministic.</li><li>Near-miss contact can be assisted without guaranteeing success.</li><li>A ball cannot be processed twice by the same tackle event.</li><li>Changing player skin does not change ball interaction zones unless explicitly configured.</li><li>Ball state always has a valid recovery path.</li></ul>
+
+<h2>27 — Senior Developer Decision Rules</h2>
+<div class="rule"><strong>01.</strong> The ball should feel responsive before it feels realistic.</div>
+<div class="rule"><strong>02.</strong> Assist the player's intention, never the desired outcome.</div>
+<div class="rule"><strong>03.</strong> Separate interaction detection from physical simulation.</div>
+<div class="rule"><strong>04.</strong> Never let a visual animation secretly become gameplay authority.</div>
+<div class="rule"><strong>05.</strong> Every ball action must have explicit timing and ownership.</div>
+<div class="rule"><strong>06.</strong> A player should understand why a kick failed.</div>
+<div class="rule"><strong>07.</strong> Do not add advanced spin/aerodynamics before basic contact feels excellent.</div>
+<div class="rule"><strong>08.</strong> Multiplayer validation is part of ball design, not a later networking task.</div>
+
+<h2>28 — Definition of Done</h2>
+<ul class="check"><li>Running, turning and kicking feel coherent as one control system.</li><li>Near misses are forgiving but not automatic.</li><li>Ball launches are predictable and exciting.</li><li>Tackles create readable player/ball outcomes.</li><li>Goal and out-of-bounds logic is authoritative.</li><li>Ball behaviour is stable at target frame rates.</li><li>Ball interactions are debugged through a dedicated lab.</li><li>All tuning values are centralized and editable.</li></ul>
+
+<div class="rule"><strong>FINAL PRINCIPLE</strong><br>The best ball system makes the player feel more skilled than the raw input actually was — without ever making them feel cheated.</div>
+<p class="small">Implementation protocol: inspect existing architecture → identify ball authority → propose smallest robust change → implement → test normal and edge cases → tune → document.</p>
+</main></body></html>

@@ -1,0 +1,204 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Multiplayer & Networking Bible</title>
+<style>
+:root{--bg:#0b0d10;--panel:#11151a;--panel2:#171c22;--text:#eef2f6;--muted:#a8b0ba;--line:#29313a;--accent:#7ee787;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}
+main{max-width:1080px;margin:auto;padding:56px 28px 100px}h1{font-size:48px;line-height:1.05;letter-spacing:-1.5px;margin:0 0 16px}
+h2{font-size:30px;line-height:1.15;margin:58px 0 18px;padding-top:18px;border-top:1px solid var(--line)}h3{font-size:20px;margin-top:32px}
+p,li{color:#d8dde3}strong{color:#fff}.hero{background:linear-gradient(145deg,#151b21,#0d1115);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:35px}
+.kicker{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:13px}.subtitle{font-size:20px;color:var(--muted);max-width:850px}
+.rule{border-left:4px solid var(--accent);background:var(--panel);padding:18px 20px;margin:22px 0;border-radius:0 12px 12px 0}.warning{border-left-color:var(--warn)}.danger{border-left-color:var(--danger)}
+pre{background:#07090b;border:1px solid var(--line);padding:20px;border-radius:12px;overflow:auto;color:#d9e2ea;line-height:1.45}code{background:#171c22;padding:2px 6px;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:20px 0;background:var(--panel)}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{color:#fff;background:var(--panel2)}td{color:#cfd6dd}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin:3px;color:#dce3e9;font-size:13px}.small{font-size:14px;color:var(--muted)}
+.check{list-style:"✓  "}.no{list-style:"✕  "}
+</style>
+</head><body><main>
+<section class="hero"><div class="kicker">Gameplay Engineering Bible · KB 05</div><h1>Multiplayer & Networking</h1>
+<p class="subtitle">A network architecture for a fast, chaotic third-person football game where movement, collisions and the ball must remain responsive while the server remains authoritative.</p>
+<p><strong>Design target:</strong> Local control should feel immediate; shared reality should remain consistent and cheat-resistant.</p></section>
+
+<div class="rule"><strong>CORE PRINCIPLE</strong><br><strong>Predict locally, validate authoritatively.</strong> The client can predict what the player intends to do, but the client cannot decide the shared reality of the match.</div>
+
+<h2>01 — The Fundamental Problem</h2>
+<p>Our game has exactly the systems that make networking difficult:</p>
+<ul><li>Fast third-person movement.</li><li>Player-player collisions.</li><li>Knockback and ragdoll.</li><li>A highly interactive ball.</li><li>Short action windows.</li><li>Many simultaneous players.</li></ul>
+<p>Networking must therefore be considered part of gameplay architecture, not an integration task at the end.</p>
+
+<h2>02 — Authority Model</h2>
+<pre>CLIENT
+Input
+ ↓
+Prediction
+ ↓
+Presentation
+
+        ↕ network
+
+SERVER
+ ↓
+Authoritative Simulation
+ ↓
+Validated State
+ ↓
+Snapshots</pre>
+<p>The server should be authoritative for match-critical outcomes.</p>
+
+<h2>03 — What the Client Owns</h2>
+<p>The client owns <strong>input and presentation</strong>, not truth.</p>
+<ul><li>Local input.</li><li>Local predicted movement.</li><li>Camera.</li><li>Animation presentation.</li><li>Local VFX/SFX.</li></ul>
+
+<h2>04 — What the Server Owns</h2>
+<ul><li>Match state.</li><li>Player authoritative state.</li><li>Ball authoritative state.</li><li>Goals.</li><li>Score.</li><li>Critical interactions.</li><li>Validation.</li></ul>
+
+<h2>05 — Client Prediction</h2>
+<p>Without prediction, input feels delayed by network round-trip time.</p>
+<pre>Input
+ ↓
+Client simulates immediately
+ ↓
+Send input to server
+ ↓
+Server simulates
+ ↓
+Server snapshot
+ ↓
+Client compares
+ ↓
+Reconcile if necessary</pre>
+
+<h2>06 — Reconciliation</h2>
+<p>When the server disagrees with the client, correct the client without producing visible teleportation whenever possible.</p>
+<ul><li>Store recent inputs.</li><li>Receive authoritative state.</li><li>Find the matching simulation point.</li><li>Correct state.</li><li>Replay unacknowledged inputs.</li></ul>
+
+<h2>07 — Remote Player Interpolation</h2>
+<p>Other players should normally be rendered from buffered snapshots with interpolation rather than jumping between network packets.</p>
+<pre>Snapshot A → Snapshot B
+       ↓
+     INTERPOLATE
+       ↓
+Smooth remote player</pre>
+
+<h2>08 — Extrapolation</h2>
+<p>Use carefully. Extrapolation can help during packet gaps but can become visibly wrong during tackles and direction changes. Prefer conservative presentation over confident hallucination.</p>
+
+<h2>09 — Tick Rate</h2>
+<p>Define simulation and network tick rates explicitly. Do not let render FPS determine network gameplay timing.</p>
+<p>Test under realistic load rather than assuming local LAN behaviour represents the final experience.</p>
+
+<h2>10 — Networked Movement</h2>
+<p>Movement should replicate meaningful gameplay state rather than blindly streaming every transform update.</p>
+<pre>Input
+ ↓
+Movement Simulation
+ ↓
+Position
+Velocity
+State
+Action
+ ↓
+Replication</pre>
+
+<h2>11 — Networked Ball</h2>
+<p>The ball is especially sensitive. Clients may predict local visual movement, but the authoritative ball state must come from the simulation.</p>
+<p>Important state:</p>
+<ul><li>Position.</li><li>Velocity.</li><li>Angular state if used.</li><li>Ball gameplay state.</li><li>Last interaction.</li><li>Authoritative tick.</li></ul>
+
+<h2>12 — Tackle Validation</h2>
+<pre>Client: "I hit Player B"
+          ↓
+Server receives action
+          ↓
+Validate position/time/state
+          ↓
+Validate hitbox interaction
+          ↓
+Resolve impact
+          ↓
+Replicate result</pre>
+<p>Never trust a client-provided "hit confirmed" message.</p>
+
+<h2>13 — Lag Compensation</h2>
+<p>For short, high-value interactions, server-side rewind or historical state can be considered.</p>
+<p>Use only where the gameplay benefit justifies the complexity. The goal is fair interaction, not perfect recreation of every historical frame.</p>
+
+<h2>14 — Ownership</h2>
+<p>Ownership should be explicit for networked entities. Avoid ambiguous ownership of the ball during contested interactions.</p>
+
+<h2>15 — Simultaneous Events</h2>
+<p>When multiple players interact with the ball or each other in the same tick, define deterministic arbitration.</p>
+<pre>Collect events
+ ↓
+Validate
+ ↓
+Sort by authoritative simulation order
+ ↓
+Resolve
+ ↓
+Emit final state</pre>
+
+<h2>16 — Latency Design</h2>
+<table><tr><th>Latency</th><th>Expected concern</th></tr><tr><td>Low</td><td>Normal prediction/reconciliation.</td></tr><tr><td>Medium</td><td>Visible correction risk.</td></tr><tr><td>High</td><td>Tackle/ball disagreement becomes significant.</td></tr><tr><td>Very high</td><td>Graceful degradation required.</td></tr></table>
+
+<h2>17 — Network Debugging</h2>
+<p>Create artificial conditions:</p>
+<div><span class="pill">30 ms</span><span class="pill">60 ms</span><span class="pill">100 ms</span><span class="pill">150 ms</span><span class="pill">packet loss</span><span class="pill">jitter</span></div>
+<p>The game must be tested under bad conditions before calling multiplayer finished.</p>
+
+<h2>18 — Anti-Cheat Principles</h2>
+<p>Never trust:</p>
+<ul><li>Client position.</li><li>Client speed.</li><li>Client kick power.</li><li>Client goal confirmation.</li><li>Client collision result.</li><li>Client cooldown completion.</li></ul>
+<p>Validate constraints server-side.</p>
+
+<h2>19 — Disconnect / Recovery</h2>
+<p>Define what happens when a player disconnects during:</p>
+<ul><li>Normal play.</li><li>Tackle.</li><li>Possession.</li><li>Goal sequence.</li><li>Match transition.</li></ul>
+<p>Never allow a disconnected entity to leave the match in a broken state.</p>
+
+<h2>20 — Network-Friendly Architecture</h2>
+<pre>Input Layer
+     ↓
+Gameplay Commands
+     ↓
+Simulation
+     ↓
+Authoritative State
+     ↓
+Replication
+     ↓
+Presentation</pre>
+<p>This separation makes prediction, testing and reconciliation possible.</p>
+
+<h2>21 — Anti-Patterns</h2>
+<ul class="no"><li>Client-authoritative score.</li><li>Client-authoritative goals.</li><li>Streaming raw transform every frame as the entire architecture.</li><li>Using network correction to hide a broken movement model.</li><li>Adding networking after the physics architecture is complete.</li><li>Trusting client hit detection for competitive actions.</li></ul>
+
+<h2>22 — Network Lab</h2>
+<pre>[ LOCAL 0ms ]
+[ 50ms ]
+[ 100ms ]
+[ 150ms ]
+[ JITTER ]
+[ PACKET LOSS ]
+
+[ MOVEMENT ]
+[ TACKLE ]
+[ BALL ]
+[ GOAL ]
+[ MULTI-PLAYER COLLISION ]</pre>
+
+<h2>23 — Automated Tests</h2>
+<ul class="check"><li>Client prediction converges toward server state.</li><li>Reconciliation does not create visible repeated teleportation.</li><li>Server rejects impossible speed.</li><li>Server rejects impossible kick range.</li><li>Goal cannot be client-forged.</li><li>Ball cannot be client-teleported.</li><li>Simultaneous interactions resolve deterministically.</li></ul>
+
+<h2>24 — Senior Developer Decision Rules</h2>
+<div class="rule"><strong>01.</strong> Responsiveness belongs on the client; truth belongs on the server.</div>
+<div class="rule"><strong>02.</strong> Never sacrifice authority to hide latency.</div>
+<div class="rule"><strong>03.</strong> Never sacrifice local responsiveness when prediction can solve the problem.</div>
+<div class="rule"><strong>04.</strong> Network gameplay state must be explicit.</div>
+<div class="rule"><strong>05.</strong> The ball deserves the same networking discipline as the player.</div>
+<div class="rule"><strong>06.</strong> Test bad networks intentionally.</div>
+<div class="rule"><strong>07.</strong> If an interaction cannot be explained under latency, redesign it before adding hacks.</div>
+
+<h2>25 — Definition of Done</h2>
+<ul class="check"><li>Local movement feels immediate.</li><li>Remote players appear smooth.</li><li>Server remains authoritative.</li><li>Ball state is consistent.</li><li>Tackles are validated.</li><li>Goals are impossible to forge.</li><li>Reconciliation is rare and visually controlled.</li><li>Bad-network testing is part of QA.</li></ul>
+
+<div class="rule"><strong>FINAL PRINCIPLE</strong><br>A multiplayer game is not finished when two computers can exchange positions. It is finished when players with different latency still believe they are playing the same game.</div>
+</main></body></html>

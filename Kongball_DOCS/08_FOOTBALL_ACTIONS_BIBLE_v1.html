@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Third-Person Arcade Football — Football Actions Bible</title>
+<style>
+:root{--bg:#0b0d10;--panel:#11151a;--panel2:#171c22;--text:#eef2f6;--muted:#a8b0ba;--line:#29313a;--accent:#7ee787;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}
+main{max-width:1080px;margin:auto;padding:56px 28px 100px}h1{font-size:48px;line-height:1.05;letter-spacing:-1.5px;margin:0 0 16px}
+h2{font-size:30px;line-height:1.15;margin:58px 0 18px;padding-top:18px;border-top:1px solid var(--line)}h3{font-size:20px;margin-top:32px}
+p,li{color:#d8dde3}strong{color:#fff}.hero{background:linear-gradient(145deg,#151b21,#0d1115);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:35px}
+.kicker{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:13px}.subtitle{font-size:20px;color:var(--muted);max-width:850px}
+.rule{border-left:4px solid var(--accent);background:var(--panel);padding:18px 20px;margin:22px 0;border-radius:0 12px 12px 0}.warning{border-left-color:var(--warn)}.danger{border-left-color:var(--danger)}
+pre{background:#07090b;border:1px solid var(--line);padding:20px;border-radius:12px;overflow:auto;color:#d9e2ea;line-height:1.45}
+code{background:#171c22;padding:2px 6px;border-radius:5px}table{width:100%;border-collapse:collapse;margin:20px 0;background:var(--panel)}
+th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{color:#fff;background:var(--panel2)}td{color:#cfd6dd}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin:3px;color:#dce3e9;font-size:13px}.check{list-style:"✓  "}.no{list-style:"✕  "}.small{font-size:14px;color:var(--muted)}
+</style>
+</head>
+<body><main>
+<section class="hero">
+<div class="kicker">Gameplay Engineering Bible · KB 08</div>
+<h1>Football Actions</h1>
+<p class="subtitle">The authoritative action catalogue for movement-to-ball interactions: readable, responsive and forgiving enough for arcade play without removing player skill.</p>
+<p><strong>Design target:</strong> Every football action must have a clear intention, a predictable active window, a defined interaction result and a controlled recovery.</p>
+</section>
+
+<div class="rule"><strong>CORE PRINCIPLE</strong><br>An action is not an animation and it is not a physics impulse. It is a <strong>gameplay command</strong> that passes through validation, timing, interaction resolution and recovery.</div>
+
+<h2>01 — Action Architecture</h2>
+<pre>INPUT
+  ↓
+PLAYER INTENT
+  ↓
+CAN ACTION?
+  ↓
+START ACTION
+  ↓
+WINDUP
+  ↓
+ACTIVE WINDOW
+  ↓
+RESOLUTION
+  ↓
+RECOVERY
+  ↓
+RETURN TO VALID STATE</pre>
+<p>This follows the existing state/action architecture. Actions must not directly fight movement, physics, networking or animation systems.</p>
+
+<h2>02 — Action Categories</h2>
+<table><tr><th>Category</th><th>Actions</th><th>Primary purpose</th></tr>
+<tr><td>Locomotion</td><td>Move / Sprint / Jump</td><td>Positioning.</td></tr>
+<tr><td>Ball</td><td>Touch / Dribble / Kick / Pass / Shot / Header</td><td>Control and advance the ball.</td></tr>
+<tr><td>Defensive</td><td>Tackle / Block / Intercept</td><td>Disrupt opponent or ball trajectory.</td></tr>
+<tr><td>Reaction</td><td>Stagger / Stumble / Knockback / Ragdoll</td><td>Resolve impacts.</td></tr>
+</table>
+
+<h2>03 — Common Action Contract</h2>
+<p>Every action should expose the same conceptual data.</p>
+<pre>ActionData
+├── ActionId
+├── AllowedStates
+├── WindupDuration
+├── ActiveDuration
+├── RecoveryDuration
+├── Cooldown
+├── InputBuffer
+├── CancelRules
+├── Hitbox / Query
+├── InteractionType
+├── Power
+├── Assist
+├── ImpactTier
+├── Animation
+├── VFX
+├── SFX
+└── Haptics</pre>
+<p>Centralizing this data makes actions tunable without scattering constants across gameplay scripts.</p>
+
+<h2>04 — Kick</h2>
+<p>The kick is the baseline ball action and should use the interaction architecture already defined for the ball.</p>
+<pre>KICK INPUT
+    ↓
+VALIDATE ACTION
+    ↓
+WINDUP
+    ↓
+ACTIVE CONTACT WINDOW
+    ↓
+FIND BALL IN KICK ZONE
+    ↓
+RESOLVE CONTACT QUALITY
+    ↓
+AIM / ASSIST
+    ↓
+CALCULATE LAUNCH
+    ↓
+BALL COMMAND
+    ↓
+RECOVERY</pre>
+<table><tr><th>Input</th><th>Gameplay meaning</th></tr>
+<tr><td>Kick</td><td>Attempt a standard ball launch.</td></tr>
+<tr><td>Direction</td><td>Desired launch vector.</td></tr>
+<tr><td>Held duration</td><td>Optional power modifier.</td></tr>
+</table>
+
+<h2>05 — Kick Contact Quality</h2>
+<table><tr><th>Quality</th><th>Gameplay result</th></tr>
+<tr><td>Poor</td><td>Weak or awkward contact.</td></tr>
+<tr><td>Normal</td><td>Expected launch.</td></tr>
+<tr><td>Clean</td><td>Strong and accurate launch.</td></tr>
+<tr><td>Perfect</td><td>Optional advanced mechanic; only use if it adds meaningful skill.</td></tr>
+</table>
+<div class="rule warning"><strong>Assist rule:</strong> aim assist and magnetism may increase the probability of clean contact, but must not guarantee a successful outcome.</div>
+
+<h2>06 — Pass</h2>
+<p>Pass is a kick variant with a different intent profile rather than a completely separate physics system.</p>
+<pre>PASS
+ ↓
+SELECT INTENDED DIRECTION / TARGET
+ ↓
+VALIDATE BALL CONTACT
+ ↓
+BOUNDED AIM ASSIST
+ ↓
+APPLY PASS LAUNCH MODEL
+ ↓
+BALL SIMULATION</pre>
+<p>The ball remains authoritative and physical after launch. The pass system chooses the launch command; it does not own the ball afterward.</p>
+
+<h2>07 — Shot</h2>
+<p>A shot is a high-power football action with stronger contextual modifiers.</p>
+<pre>SHOT
+ ↓
+CHECK BALL CONTACT
+ ↓
+CHECK ACTION STATE
+ ↓
+CALCULATE INTENT
+ ↓
+AIM CONE
+ ↓
+POWER
+ ↓
+CONTACT QUALITY
+ ↓
+LAUNCH
+ ↓
+PHYSICS</pre>
+<p>Shot power, vertical lift, spin and maximum speed should remain data-driven and centralized.</p>
+
+<h2>08 — Dribble / Controlled Touch</h2>
+<p>Controlled touch should not make the ball a child of the player transform. The ball remains a gameplay object with physical state.</p>
+<pre>PLAYER INTENT
+    ↓
+CONTROL ZONE
+    ↓
+VALIDATE BALL
+    ↓
+CALCULATE TOUCH TARGET
+    ↓
+BOUNDED CORRECTION
+    ↓
+APPLY TOUCH
+    ↓
+BALL REMAINS PHYSICAL</pre>
+<p>The existing ball architecture explicitly requires this separation.</p>
+
+<h2>09 — Header</h2>
+<p>Header is an airborne interaction using a dedicated header zone.</p>
+<pre>HEADER INPUT
+    ↓
+CHECK AIRBORNE BALL
+    ↓
+CHECK HEADER ZONE
+    ↓
+RESOLVE CONTACT
+    ↓
+AIM / ASSIST
+    ↓
+BALL LAUNCH
+    ↓
+RECOVERY</pre>
+<p>Header should use the same ball command pipeline as kicks where possible, with different contact geometry and tuning.</p>
+
+<h2>10 — Tackle</h2>
+<p>Tackle is an authored gameplay interaction, not a request for two rigidbodies to collide and hope for a good result.</p>
+<pre>TACKLE INPUT
+    ↓
+VALIDATE ACTION
+    ↓
+WINDUP
+    ↓
+ACTIVE TACKLE HITBOX
+    ↓
+QUERY VALID TARGETS
+    ↓
+RESOLVE PRIORITY
+    ↓
+BALL / PLAYER RESULT
+    ↓
+RECOVERY</pre>
+<table><tr><th>Result</th><th>Possible response</th></tr>
+<tr><td>Miss</td><td>Recovery / vulnerability.</td></tr>
+<tr><td>Ball contact</td><td>Ball deflection or steal according to rules.</td></tr>
+<tr><td>Player contact</td><td>Impact tier applied to target.</td></tr>
+<tr><td>Ball + player</td><td>Deterministic priority resolves both interactions.</td></tr></table>
+
+<h2>11 — Block / Intercept</h2>
+<p>These actions should be query-driven rather than dependent on perfect physical collision.</p>
+<pre>ACTION
+ ↓
+ACTIVE WINDOW
+ ↓
+QUERY BALL PATH / TARGET
+ ↓
+VALIDATE
+ ↓
+MODIFY BALL RESULT
+ ↓
+PRESENT IMPACT</pre>
+
+<h2>12 — Jump</h2>
+<p>Jump is primarily a locomotion action, but it changes which football interactions are valid.</p>
+<table><tr><th>State</th><th>Allowed interactions</th></tr>
+<tr><td>Grounded</td><td>Kick, tackle, jump, normal control.</td></tr>
+<tr><td>Airborne</td><td>Header where valid; limited ground actions.</td></tr>
+<tr><td>Impact</td><td>Defined by interruption rules.</td></tr></table>
+
+<h2>13 — Action Cancellation</h2>
+<p>Cancellation must be authored per action.</p>
+<table><tr><th>Action</th><th>Possible cancellation</th></tr>
+<tr><td>Sprint</td><td>Tackle / jump where permitted.</td></tr>
+<tr><td>Kick</td><td>May be interrupted before active contact.</td></tr>
+<tr><td>Tackle</td><td>Usually committed after active phase begins.</td></tr>
+<tr><td>Jump</td><td>Transitions into airborne state rather than arbitrary cancellation.</td></tr></table>
+<p>Do not implement cancellation as random script overrides.</p>
+
+<h2>14 — Input Buffering</h2>
+<p>Short buffers make the controls forgiving without creating a combo queue.</p>
+<pre>INPUT EARLY
+    ↓
+SHORT BUFFER
+    ↓
+ACTION BECOMES AVAILABLE
+    ↓
+EXECUTE</pre>
+<p>Useful examples include kick immediately after recovery, jump near landing and tackle after sprint.</p>
+
+<h2>15 — Action Priority</h2>
+<pre>NORMAL
+ ↓
+ACTION
+ ↓
+IMPACT
+ ↓
+KNOCKBACK / RAGDOLL
+ ↓
+RECOVERY</pre>
+<p>Higher-priority gameplay states may interrupt lower-priority actions according to explicit rules.</p>
+
+<h2>16 — Ball Interaction Priority</h2>
+<p>When multiple interactions are possible in the same simulation window, resolve them deterministically.</p>
+<pre>COLLECT CANDIDATES
+      ↓
+VALIDATE STATES
+      ↓
+SCORE / PRIORITIZE
+      ↓
+RESOLVE ONE AUTHORITATIVE RESULT
+      ↓
+APPLY BALL COMMAND
+      ↓
+EMIT EVENT</pre>
+<p>Candidate scoring may consider distance, angle, action priority, contact quality and simulation order.</p>
+
+<h2>17 — Multiplayer Contract</h2>
+<p>Clients request actions. The authoritative simulation validates them.</p>
+<pre>CLIENT INPUT
+    ↓
+LOCAL PREDICTION
+    ↓
+ACTION COMMAND
+    ↓
+SERVER VALIDATION
+    ↓
+AUTHORITATIVE RESOLUTION
+    ↓
+REPLICATION
+    ↓
+PRESENTATION</pre>
+<div class="rule danger"><strong>Never trust:</strong> client-confirmed tackles, client-confirmed goals, client-provided ball positions or impossible action timing.</div>
+
+<h2>18 — Presentation Contract</h2>
+<p>Actions emit semantic events. Animation, VFX, SFX, camera and haptics react to those events.</p>
+<pre>KickResolved
+ ├── Animation
+ ├── VFX
+ ├── SFX
+ ├── Camera
+ └── Haptics</pre>
+<p>This keeps gameplay authority separate from presentation while maintaining one coherent response.</p>
+
+<h2>19 — Anti-Patterns</h2>
+<ul class="no">
+<li>Using animation events as authoritative gameplay logic.</li>
+<li>Letting the ball become a child of the player.</li>
+<li>Putting kick/tackle physics directly inside the movement controller.</li>
+<li>Letting collision callbacks decide every interaction.</li>
+<li>Guaranteeing success with aim assist.</li>
+<li>Allowing client-side action results to become authoritative.</li>
+<li>Creating a separate physics implementation for every football action.</li>
+</ul>
+
+<h2>20 — Definition of Done</h2>
+<ul class="check">
+<li>Every player action has explicit timing.</li>
+<li>Every action declares allowed states and interruption rules.</li>
+<li>Ball actions use the shared interaction pipeline.</li>
+<li>Assist is bounded and skill-preserving.</li>
+<li>Tackles use authored hitbox/query logic.</li>
+<li>Ball results are authoritative.</li>
+<li>Actions are data-driven.</li>
+<li>Presentation reacts to semantic events.</li>
+<li>Actions remain predictable under multiplayer latency.</li>
+</ul>
+
+<div class="rule"><strong>FINAL PRINCIPLE</strong><br>The player should feel that <strong>their intention caused the action</strong>, while the game remains free to resolve that intention through controlled timing, assistance, physics and authoritative rules.</div>
+</main></body></html>

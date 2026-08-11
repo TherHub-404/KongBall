@@ -1,0 +1,468 @@
+using Fusion;
+using UnityEngine;
+
+namespace CalcioStumble
+{
+    // Milestone 1 networked player. In Shared Mode the client with StateAuthority simulates
+    // its own movement; NetworkTransform replicates it. Team is a [Networked] value set by the
+    // owner at spawn, so every client colours the capsule by team consistently.
+    public class NetPlayer : NetworkBehaviour
+    {
+        [Header("Movement")]
+        public float moveSpeed = 7f;
+        public float acceleration = 55f;
+        public float deceleration = 65f;
+        public float turnSpeed = 720f;
+        public float airControl = 0.55f;
+
+        [Header("Jump / gravity")]
+        public float jumpVelocity = 8.5f;
+        public float gravity = -25f;
+        public float fallMultiplier = 1.7f;
+        public float coyoteTime = 0.12f;
+        public float jumpBufferTime = 0.12f;
+
+        [Header("Push / Grab (ACTION without ball)")]
+        public float pushRange = 1.7f;
+        public float pushRadius = 1.3f;
+        public float pushForce = 11f;
+        public float stunDuration = 0.9f;
+        public float pushCooldown = 0.6f;
+        public float holdThreshold = 0.3f;   // hold longer than this = GRAB (else = push)
+        public float grabDuration = 1.5f;    // max grab hold
+        public float grabMoveMultiplier = 0.4f; // grabber can still shuffle slowly while holding
+
+        [Networked] public int NetTeam { get; set; }        // 0 = Blue, 1 = Red
+        [Networked] TickTimer StumbleUntil { get; set; }    // knocked-back / no control window
+        [Networked] TickTimer HeldUntil { get; set; }       // grabbed / rooted in place
+        [Networked] TickTimer GrabbingUntil { get; set; }   // I am actively grabbing someone
+        [Networked] public int KickSeq { get; set; }        // bumps on each kick (drives kick anim on all clients)
+
+        // Presentation read-only helpers.
+        public bool IsStumbled => Runner != null && !StumbleUntil.ExpiredOrNotRunning(Runner);
+        public bool IsHeld => Runner != null && !HeldUntil.ExpiredOrNotRunning(Runner);
+        public bool IsGrabbing => Runner != null && !GrabbingUntil.ExpiredOrNotRunning(Runner);
+
+        TickTimer _pushCd;
+        TickTimer _claimCd;    // throttles ball state-authority requests
+        TickTimer _grabLock;   // grabber is rooted while holding a victim
+        NetPlayer _grabTarget;
+        float _actionHeldTime;
+        bool _grabFired;
+        int _lastKickoffSeq = -1;
+
+        CharacterController _cc;
+        LocalInputSource _input;
+        Transform _cam;
+        Renderer _rend;
+        Renderer _ring;
+        int _sfxKickSeq;
+        bool _wasStumbled;
+        NetBall _ball;
+        Collider _ballCol;
+        bool _ballIgnored;
+        float _kickIgnoreUntil;
+        bool _prevAction;
+        bool _camReady;
+        Vector2 _lastAim;
+        LineRenderer _aimLine;
+
+        Vector3 _horizVel;   // horizontal velocity (m/s)
+        float _vY;           // vertical velocity
+        float _coyote;       // coyote timer
+        float _jumpBuf;      // jump buffer timer
+        bool _grounded;
+
+        static readonly Color BlueColor = new Color(0.20f, 0.55f, 1.00f);
+        static readonly Color RedColor = new Color(1.00f, 0.30f, 0.25f);
+
+        public override void Spawned()
+        {
+            _cc = GetComponent<CharacterController>();
+            var vis = transform.Find("Visual");
+            _rend = vis != null ? vis.GetComponentInChildren<Renderer>() : GetComponentInChildren<Renderer>();
+            var ring = transform.Find("GroundRing");
+            if (ring != null) _ring = ring.GetComponent<Renderer>();
+            ApplyColor();
+
+            if (HasStateAuthority)
+            {
+                _input = UnityEngine.Object.FindAnyObjectByType<LocalInputSource>();
+                if (Camera.main != null) _cam = Camera.main.transform;
+            }
+        }
+
+        // Keep the colour in sync on remote clients once the networked team value arrives.
+        // Also set up the local camera once (team is known by the first Render).
+        public override void Render()
+        {
+            ApplyColor();
+            UpdateRing();
+
+            // Feedback SFX (all clients observe networked state).
+            if (KickSeq != _sfxKickSeq) { _sfxKickSeq = KickSeq; if (SfxManager.Instance != null) SfxManager.Instance.PlayKick(); }
+            bool st = IsStumbled;
+            if (st && !_wasStumbled && SfxManager.Instance != null) SfxManager.Instance.PlayImpact();
+            _wasStumbled = st;
+
+            if (HasStateAuthority)
+            {
+                if (!_camReady) SetupCamera();
+                UpdateAimLine();
+            }
+        }
+
+        // Team-coloured ground ring under every player; brightens/pulses for the ball owner.
+        void UpdateRing()
+        {
+            if (_ring == null) return;
+            if (_ball == null) _ball = UnityEngine.Object.FindAnyObjectByType<NetBall>();
+            bool mine = _ball != null && _ball.Owner == Object.InputAuthority;
+            Color team = (NetTeam == 1) ? RedColor : BlueColor;
+            Color c = team;
+            if (mine)
+            {
+                float p = 0.5f + 0.5f * Mathf.Sin(Time.time * 9f);
+                c = Color.Lerp(team, Color.white, 0.55f + 0.35f * p);
+            }
+            _ring.material.color = c;
+        }
+
+        // Ground aim preview while holding the kick button with the ball (local only).
+        void UpdateAimLine()
+        {
+            if (_input == null || _ball == null) { HideAim(); return; }
+            bool mine = _ball.Owner == Object.InputAuthority;
+            if (!(mine && _input.GetActionHeld())) { HideAim(); return; }
+
+            Vector2 d = _input.GetAimDelta();
+            float refPx = Mathf.Max(1f, Screen.height * 0.22f);
+            float deadPx = Screen.height * 0.04f;
+            Vector3 dir; float power;
+            if (d.magnitude > deadPx && _cam != null)
+            {
+                Vector3 f = _cam.forward; f.y = 0f; if (f.sqrMagnitude > 1e-6f) f.Normalize();
+                Vector3 r = _cam.right; r.y = 0f; if (r.sqrMagnitude > 1e-6f) r.Normalize();
+                dir = r * d.x + f * d.y; dir.y = 0f;
+                dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : FlatForward();
+                power = Mathf.Clamp01(d.magnitude / refPx);
+            }
+            else { dir = FlatForward(); power = 0f; }
+            power = Mathf.Clamp(power, 0.15f, 1f);
+
+            EnsureAimLine();
+            Vector3 p0 = _ball.transform.position; p0.y = 0.12f;
+            Vector3 p1 = p0 + dir * Mathf.Lerp(1.5f, 6.5f, power);
+            _aimLine.enabled = true;
+            _aimLine.SetPosition(0, p0);
+            _aimLine.SetPosition(1, p1);
+            Color c = Color.Lerp(new Color(0.4f, 1f, 0.45f), new Color(1f, 0.4f, 0.2f), power);
+            _aimLine.startColor = c; _aimLine.endColor = c;
+        }
+
+        void HideAim() { if (_aimLine != null) _aimLine.enabled = false; }
+
+        Vector3 FlatForward() { Vector3 f = transform.forward; f.y = 0f; return f.sqrMagnitude > 1e-6f ? f.normalized : Vector3.forward; }
+
+        void EnsureAimLine()
+        {
+            if (_aimLine != null) return;
+            var go = new GameObject("NetAimLine");
+            _aimLine = go.AddComponent<LineRenderer>();
+            var sh = Shader.Find("Universal Render Pipeline/Unlit");
+            if (sh == null) sh = Shader.Find("Sprites/Default");
+            _aimLine.material = new Material(sh);
+            _aimLine.widthMultiplier = 0.28f;
+            _aimLine.numCapVertices = 4;
+            _aimLine.positionCount = 2;
+            _aimLine.textureMode = LineTextureMode.Stretch;
+            _aimLine.alignment = LineAlignment.View;
+            _aimLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _aimLine.enabled = false;
+        }
+
+        void SetupCamera()
+        {
+            var camObj = Camera.main;
+            if (camObj == null) return;
+            _cam = camObj.transform;
+            Vector3 attackDir = (NetTeam == 1) ? Vector3.left : Vector3.right; // Blue attacks +x, Red -x
+
+            var orbit = camObj.GetComponent<MatchCamera>();
+            if (orbit != null) orbit.SetTarget(transform, attackDir);      // real orbit camera (MainMatch look)
+            else
+            {
+                var follow = camObj.GetComponent<NetFollowCamera>();
+                if (follow == null) follow = camObj.gameObject.AddComponent<NetFollowCamera>();
+                follow.target = transform;
+            }
+            _camReady = true;
+        }
+
+        void ApplyColor()
+        {
+            if (_rend == null) return;
+            Color c = (NetTeam == 1) ? RedColor : BlueColor;
+            if (Runner != null && !StumbleUntil.ExpiredOrNotRunning(Runner)) c = Color.Lerp(c, Color.gray, 0.65f);
+            _rend.material.color = c;
+        }
+
+        public override void FixedUpdateNetwork()
+        {
+            if (!HasStateAuthority || _input == null || _cc == null) return;
+            float dt = Runner.DeltaTime;
+
+            UpdateBallIgnore(); // per-client: the ball ignores ME only while I carry it (+kick grace)
+
+            // Match phase: self-reset on a new kickoff, and freeze unless we're PLAYING.
+            var mc = MatchController.Instance;
+            if (mc != null)
+            {
+                if (mc.KickoffSeq != _lastKickoffSeq) { _lastKickoffSeq = mc.KickoffSeq; ResetToSpawn(); }
+                if (mc.CurPhase != MatchController.Phase.Playing)
+                {
+                    _horizVel = Vector3.zero;
+                    if (_grounded && _vY < 0f) _vY = -2f; else _vY += gravity * dt;
+                    var ff = _cc.Move(Vector3.up * _vY * dt);
+                    _grounded = (ff & CollisionFlags.Below) != 0 || _cc.isGrounded;
+                    _prevAction = _input.GetActionHeld();
+                    return;
+                }
+            }
+
+            bool stumbled = IsStumbled;
+            bool held = IsHeld;
+
+            // Grab ends on button release or when it times out.
+            if (_grabTarget != null && (_grabLock.ExpiredOrNotRunning(Runner) || !_input.GetActionHeld())) EndGrab();
+            bool grabbing = !_grabLock.ExpiredOrNotRunning(Runner);
+
+            // Stumbled / held (victim) = fully rooted. Grabbing (grabber) can still shuffle slowly.
+            if (stumbled || held)
+            {
+                if (stumbled) _horizVel = Vector3.MoveTowards(_horizVel, Vector3.zero, deceleration * dt);
+                else _horizVel = Vector3.zero;
+                if (_grounded && _vY < 0f) _vY = -2f; else _vY += gravity * (_vY < 0f ? fallMultiplier : 1f) * dt;
+                var flagsF = _cc.Move((_horizVel + Vector3.up * _vY) * dt);
+                _grounded = (flagsF & CollisionFlags.Below) != 0 || _cc.isGrounded;
+                _prevAction = _input.GetActionHeld();
+                return;
+            }
+
+            // --- Normal control (reduced speed while grabbing) ---
+            float spd = grabbing ? moveSpeed * grabMoveMultiplier : moveSpeed;
+            Vector2 mv = _input.GetMove();
+            Vector3 mdir;
+            if (_cam != null)
+            {
+                Vector3 f = _cam.forward; f.y = 0f;
+                Vector3 r = _cam.right; r.y = 0f;
+                if (f.sqrMagnitude > 1e-6f) f.Normalize();
+                if (r.sqrMagnitude > 1e-6f) r.Normalize();
+                mdir = r * mv.x + f * mv.y;
+            }
+            else mdir = new Vector3(mv.x, 0f, mv.y);
+
+            float inMag = Mathf.Clamp01(mdir.magnitude);
+            Vector3 wish = (inMag > 0.15f ? mdir.normalized : Vector3.zero) * spd * inMag;
+            float rate = (wish.sqrMagnitude > _horizVel.sqrMagnitude ? acceleration : deceleration) * (_grounded ? 1f : airControl);
+            _horizVel = Vector3.MoveTowards(_horizVel, wish, rate * dt);
+
+            if (inMag > 0.15f)
+            {
+                Quaternion target = Quaternion.LookRotation(mdir.normalized, Vector3.up);
+                transform.rotation = Quaternion.RotateTowards(transform.rotation, target, turnSpeed * dt);
+            }
+
+            // No jumping while grabbing.
+            if (!grabbing && _input.ConsumeJump()) _jumpBuf = jumpBufferTime;
+            _jumpBuf -= dt;
+            _coyote = _grounded ? coyoteTime : _coyote - dt;
+            if (!grabbing && _jumpBuf > 0f && _coyote > 0f) { _vY = jumpVelocity; _jumpBuf = 0f; _coyote = 0f; _grounded = false; }
+
+            if (_grounded && _vY < 0f) _vY = -2f;
+            else _vY += gravity * (_vY < 0f ? fallMultiplier : 1f) * dt;
+
+            Vector3 motion = (_horizVel + Vector3.up * _vY) * dt;
+            CollisionFlags flags = _cc.Move(motion);
+            _grounded = (flags & CollisionFlags.Below) != 0 || _cc.isGrounded;
+
+            // While grabbing, don't process kick/new-grab; just keep action edge in sync.
+            if (grabbing) _prevAction = _input.GetActionHeld();
+            else HandleBall();
+        }
+
+        // Contextual ACTION: with ball = KICK (drag-aim, release), without ball = PUSH.
+        void HandleBall()
+        {
+            if (_ball == null) _ball = UnityEngine.Object.FindAnyObjectByType<NetBall>();
+            bool action = _input.GetActionHeld();
+            bool pressEdge = action && !_prevAction;
+
+            // --- Possession claim (authority follows possessor) ---
+            if (_ball != null)
+            {
+                Vector3 a = transform.position; Vector3 b = _ball.transform.position; a.y = 0f; b.y = 0f;
+                float d = Vector3.Distance(a, b);
+                bool owned = _ball.Owner == Object.InputAuthority;
+                // Free ball: normal radius. Stealing from another owner needs you clearly closer
+                // (hysteresis) so possession doesn't thrash back and forth when two players contest.
+                bool ballFree = _ball.Owner == PlayerRef.None;
+                float claimR = ballFree ? _ball.possessionRadius : _ball.possessionRadius * 0.7f;
+                // Claim only when allowed (CanClaim gates the post-kick / post-steal lock, so you
+                // don't instantly re-own the ball you just kicked).
+                if (!owned && d < claimR && _ball.CanClaim)
+                {
+                    if (_ball.Object.HasStateAuthority) _ball.SetOwner(Object.InputAuthority);           // authority already mine -> own it
+                    else if (_claimCd.ExpiredOrNotRunning(Runner))                                        // request it (override allowed)
+                    {
+                        _ball.Object.RequestStateAuthority();
+                        _claimCd = TickTimer.CreateFromSeconds(Runner, 0.25f);
+                    }
+                }
+            }
+
+            bool mine = _ball != null && _ball.Owner == Object.InputAuthority;
+
+            if (mine)
+            {
+                // While holding, remember the drag (button zeroes it on release).
+                if (action)
+                {
+                    Vector2 aim = _input.GetAimDelta();
+                    if (aim.sqrMagnitude > 1f) _lastAim = aim;
+                }
+                // Kick on RELEASE toward the dragged direction (tap = straight ahead). I own it =>
+                // I'm the ball authority => kick locally (no RPC, instant).
+                if (!action && _prevAction)
+                {
+                    Vector3 dir;
+                    if (_lastAim.sqrMagnitude > 100f && _cam != null)
+                    {
+                        Vector3 f = _cam.forward; f.y = 0f; f.Normalize();
+                        Vector3 r = _cam.right; r.y = 0f; r.Normalize();
+                        dir = (r * _lastAim.x + f * _lastAim.y).normalized;
+                    }
+                    else dir = transform.forward;
+                    float power = 0.5f;
+                    if (_lastAim.sqrMagnitude > 1f) power = Mathf.Clamp01(_lastAim.magnitude / (Screen.height * 0.22f));
+                    power = Mathf.Max(power, 0.35f);
+                    _ball.Kick(dir, power);
+                    KickSeq++; // triggers the kick animation on all clients
+                    _kickIgnoreUntil = Time.time + 0.5f; // let the kicked ball escape my body
+                }
+                if (!action) _lastAim = Vector2.zero;
+            }
+            else
+            {
+                // No ball: HOLD = GRAB, quick TAP = PUSH.
+                _ = pressEdge; // (kept for clarity)
+                if (action) _actionHeldTime += Runner.DeltaTime; else _actionHeldTime = 0f;
+
+                if (action && !_grabFired && _actionHeldTime >= holdThreshold)
+                {
+                    var target = FindTargetInFront();
+                    if (target != null)
+                    {
+                        target.RPC_Grab(grabDuration);
+                        _grabTarget = target;
+                        _grabLock = TickTimer.CreateFromSeconds(Runner, grabDuration);
+                        GrabbingUntil = TickTimer.CreateFromSeconds(Runner, grabDuration);
+                        _grabFired = true;
+                    }
+                }
+                if (!action && _prevAction && !_grabFired && _pushCd.ExpiredOrNotRunning(Runner))
+                {
+                    var target = FindTargetInFront();
+                    if (target != null)
+                    {
+                        Vector3 dir = target.transform.position - transform.position; dir.y = 0f;
+                        target.RPC_Push(dir, pushForce);
+                        _pushCd = TickTimer.CreateFromSeconds(Runner, pushCooldown);
+                    }
+                }
+                if (!action) _grabFired = false;
+            }
+
+            _prevAction = action;
+        }
+
+        NetPlayer FindTargetInFront()
+        {
+            Vector3 center = transform.position + transform.forward * (pushRange * 0.5f);
+            var hits = Physics.OverlapSphere(center, pushRadius);
+            NetPlayer best = null; float bestD = float.MaxValue;
+            foreach (var h in hits)
+            {
+                var np = h.GetComponentInParent<NetPlayer>();
+                if (np == null || np == this || np.NetTeam == NetTeam) continue;
+                Vector3 to = np.transform.position - transform.position; to.y = 0f;
+                float d = to.magnitude;
+                if (d > 0.01f && Vector3.Dot(transform.forward, to.normalized) < 0.25f) continue; // must be in front
+                if (d < bestD) { bestD = d; best = np; }
+            }
+            return best;
+        }
+
+        void EndGrab()
+        {
+            _grabLock = default;
+            GrabbingUntil = default;
+            if (_grabTarget != null) { _grabTarget.RPC_Release(); _grabTarget = null; }
+        }
+
+        // Per-client: the ball ignores MY collider only while I own it (so my dribble/back-kick
+        // don't hit my own body) plus a short grace after I kick. Runs on my own client so it
+        // self-corrects when authority changes (fixes the "pass through the ball forever" bug).
+        void UpdateBallIgnore()
+        {
+            if (_ball == null) _ball = UnityEngine.Object.FindAnyObjectByType<NetBall>();
+            if (_ball == null || _cc == null) return;
+            if (_ballCol == null) _ballCol = _ball.GetComponent<Collider>();
+            if (_ballCol == null) return;
+            bool ignore = (_ball.Owner == Object.InputAuthority) || (Time.time < _kickIgnoreUntil);
+            if (ignore != _ballIgnored) { Physics.IgnoreCollision(_ballCol, _cc, ignore); _ballIgnored = ignore; }
+        }
+
+        // Teleport back to the team's kickoff spot (called on a new kickoff).
+        void ResetToSpawn()
+        {
+            bool blue = NetTeam == 0;
+            float x = blue ? -6f : 6f;
+            int id = Object.InputAuthority.PlayerId;
+            float z = ((id % 3) - 1) * 3f;
+            Vector3 pos = new Vector3(x, 1.1f, z);
+            Quaternion rot = Quaternion.LookRotation(blue ? Vector3.right : Vector3.left, Vector3.up);
+            if (_cc != null) _cc.enabled = false;
+            transform.SetPositionAndRotation(pos, rot);
+            if (_cc != null) _cc.enabled = true;
+            _horizVel = Vector3.zero; _vY = 0f;
+            StumbleUntil = default;
+        }
+
+        // Executed on the TARGET's authority: apply knockback + stumble to itself.
+        [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+        public void RPC_Push(Vector3 dir, float force)
+        {
+            dir.y = 0f;
+            if (dir.sqrMagnitude > 1e-4f) dir.Normalize();
+            _horizVel = dir * force;
+            if (_vY < 2f) _vY = 2f; // small pop
+            StumbleUntil = TickTimer.CreateFromSeconds(Runner, stunDuration);
+        }
+
+        // Executed on the TARGET's authority: grabbed = rooted in place (and drops the ball).
+        [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+        public void RPC_Grab(float dur)
+        {
+            _horizVel = Vector3.zero;
+            HeldUntil = TickTimer.CreateFromSeconds(Runner, dur);
+        }
+
+        [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+        public void RPC_Release()
+        {
+            HeldUntil = default;
+        }
+    }
+}

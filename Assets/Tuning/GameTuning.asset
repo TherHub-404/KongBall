@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f3450ebdf4ca41a2ac8c954c44502de, type: 3}
+  m_Name: GameTuning
+  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.GameTuning
+  moveSpeed: 6.5
+  acceleration: 45
+  deceleration: 55
+  turnSpeed: 720
+  kickMinForce: 3
+  kickMaxForce: 9
+  kickUpwardRatio: 0.12
+  kickCooldown: 0.2
+  pushRadius: 0.6
+  pushForce: 14
+  stunDuration: 1
+  pushCooldown: 0.4
+  restrainMaxDuration: 1.5
+  restrainDistance: 1.1
+  restrainMoveMultiplier: 0.5
+  grabCooldown: 0.6
+  holdThreshold: 0.35
+  possessionRadius: 0.7
+  dribbleAhead: 1.3
+  catchUpGain: 8
+  maxDribbleSpeed: 10
+  velocityEase: 12
+  loseDistance: 2.2
+  maxBallSpeed: 24

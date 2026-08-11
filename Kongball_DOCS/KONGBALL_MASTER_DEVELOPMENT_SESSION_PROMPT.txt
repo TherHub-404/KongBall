@@ -1,0 +1,1616 @@
+# KONGBALL — MASTER DEVELOPMENT SESSION
+
+## Technical Audit → Design Synthesis → Gameplay Optimization → 3D Integration → Implementation
+
+You are working on an existing game project called KONGBALL.
+
+This is NOT a greenfield project.
+
+The game already exists, has already been developed, and already has a working multiplayer implementation. The game can already be played and tested in multiplayer. There are existing gameplay systems, code, scenes, assets, physics, networking and technical decisions.
+
+This session is NOT intended to restart the project or rebuild everything from scratch.
+
+Instead, this is a major consolidation and optimization session.
+
+You are being given:
+- the existing project
+- a collection of HTML design and technical documents from the previous design phase
+- existing and/or new 3D assets
+
+Your job is to understand all of this together and turn it into a more coherent, fun, technically robust and visually consistent version of Kongball.
+
+Behave like an experienced gameplay / technical developer joining an existing game project and performing a deep technical and gameplay audit before making significant changes.
+
+Do not blindly follow the documents.
+Do not blindly preserve the existing implementation.
+
+Understand both.
+
+Then make the best technical and gameplay decisions for Kongball.
+
+---
+
+# 01 — WHAT IS KONGBALL?
+
+Kongball is a mobile-first arcade football game where monkeys play football.
+
+Core format: 3v3.
+
+The game should feel:
+- arcade
+- physical
+- playful
+- chaotic
+- funny
+- responsive
+- readable
+- easy to understand
+- difficult to master
+- highly replayable
+
+The characters are stylized cartoon 3D monkeys with a toy-like physical quality.
+
+They should NOT feel like realistic football players with monkey skins.
+
+They should feel like:
+
+PLAYFUL MONKEYS PLAYING CHAOTIC CARTOON FOOTBALL.
+
+Physicality is a fundamental part of the game's identity.
+
+Players should be able to:
+- move
+- jump
+- kick the ball
+- grab other players
+- push other players
+- collide
+- get knocked back
+- stumble
+- potentially ragdoll
+- recover
+- score goals
+
+The game should create moments where the player thinks:
+
+"That was ridiculous."
+
+and immediately wants to play again.
+
+However:
+
+CHAOS MUST NEVER DESTROY READABILITY OR CONTROL.
+
+The game should feel chaotic visually and physically while remaining understandable from a gameplay perspective.
+
+---
+
+# 02 — WHY KONGBALL IS DESIGNED THIS WAY
+
+Before implementing anything, understand WHY Kongball is designed this way.
+
+The goal is NOT to create a realistic football simulator.
+
+The goal is to create a highly readable, physical, funny and replayable arcade football game.
+
+The game should have:
+
+VERY SIMPLE INPUT
++
+RICH INTERACTION
++
+PHYSICAL GAME FEEL
++
+STRONG CHARACTER IDENTITY
++
+SHORT LEARNING CURVE
++
+HIGH SKILL CEILING
+
+### Why simple controls?
+
+Kongball is mobile-first.
+
+The player should mainly think:
+
+MOVE
+JUMP
+ACTION
+
+The complexity should come from:
+- positioning
+- timing
+- physics
+- opponents
+- ball trajectory
+- spatial awareness
+- teamwork
+- risk/reward
+
+NOT from having many buttons.
+
+### Why contextual ACTION?
+
+ACTION changes depending on the player's relationship with the ball.
+
+WITH BALL:
+ACTION = KICK
+
+WITHOUT BALL:
+ACTION = GRAB / PUSH
+
+One button represents:
+
+"DO THE MOST RELEVANT INTERACTION RIGHT NOW."
+
+### Why physical gameplay?
+
+Physicality is one of Kongball's main differentiators.
+
+The ball should feel physical.
+Players should feel physical.
+Collisions should feel physical.
+Kick, grab, push, knockback and ragdoll should create memorable moments.
+
+However:
+
+PHYSICAL DOES NOT MEAN UNCONTROLLED.
+
+Physics should support gameplay rather than replace gameplay design.
+
+### Why monkeys?
+
+The monkey characters are not just a visual skin.
+
+Their identity should influence:
+- movement
+- animation
+- reactions
+- body language
+- comedy
+- physicality
+- game feel
+
+The player should feel that they are controlling a playful monkey, not a footballer with a monkey model.
+
+### Why cartoon physics?
+
+Exaggerated physical reactions make the game more readable and entertaining.
+
+A kick should feel like a kick.
+A grab should feel impactful.
+A push should communicate force.
+A collision should create a clear reaction.
+A ragdoll should be funny.
+
+### Why separate gameplay from visuals?
+
+Gameplay must remain reliable.
+
+The visual model can be complex.
+The gameplay collider can be simple.
+The animation can be exaggerated.
+The gameplay state must remain authoritative.
+
+### Why multiplayer-first thinking?
+
+Kongball is already multiplayer.
+
+Every gameplay-critical system must remain compatible with the existing multiplayer architecture.
+
+Do not create local-only gameplay shortcuts that break multiplayer consistency.
+
+### Why is documentation not automatically the source of truth?
+
+The HTML documents represent previous design thinking.
+
+They contain valuable decisions, but may also contain:
+- experiments
+- obsolete ideas
+- duplicate solutions
+- assumptions
+- tuning values
+- contradictions
+
+The source of truth should ultimately become:
+
+GAME VISION
++
+ACTUAL PROJECT
++
+VALIDATED GAMEPLAY
++
+MASTER DEVELOPMENT DOCUMENT
+
+### Why audit before implementation?
+
+Because the game already exists.
+
+Blindly implementing every document could create:
+- duplicate systems
+- conflicting architectures
+- unnecessary refactors
+- technical debt
+- broken multiplayer
+- unnecessary complexity
+
+Therefore:
+
+UNDERSTAND FIRST.
+DECIDE SECOND.
+IMPLEMENT THIRD.
+TEST FOURTH.
+DOCUMENT FIFTH.
+
+### Why challenge the documentation?
+
+The objective is not to prove that previous design decisions were correct.
+
+The objective is to make Kongball better.
+
+If you find a simpler, more robust or more fun solution:
+PROPOSE IT.
+
+If a previous decision is bad:
+EXPLAIN WHY.
+
+If two documents conflict:
+SURFACE THE CONFLICT.
+
+If something is unnecessary:
+SUGGEST REMOVING IT.
+
+Never silently change a fundamental decision.
+
+### Why tunable systems?
+
+Game feel cannot be fully designed on paper.
+
+Numbers such as acceleration, jump velocity, gravity, air control, kick power, kick timing, grab range and knockback should generally be treated as starting hypotheses unless explicitly marked otherwise.
+
+They must be easy to tune through playtesting.
+
+---
+
+# 03 — CORE MOBILE CONTROLS
+
+The core mobile control scheme is intentionally extremely simple.
+
+There is a movement control on the left.
+
+There are two gameplay buttons on the right:
+
+1. ACTION
+2. JUMP
+
+ACTION is contextual.
+
+If the player HAS the ball:
+
+ACTION = KICK
+
+If the player DOES NOT have the ball:
+
+ACTION = GRAB / PUSH
+
+JUMP:
+
+JUMP = JUMP
+
+Do not introduce unnecessary additional buttons unless there is an extremely strong gameplay reason.
+
+The fundamental interaction is:
+
+MOVE + ACTION + JUMP
+
+Everything else should emerge from these simple inputs.
+
+---
+
+# 04 — CORE GAMEPLAY LOOP
+
+The fundamental loop is:
+
+SPAWN
+↓
+MOVE
+↓
+FIND / APPROACH BALL
+↓
+CONTROL BALL
+↓
+DECIDE WHAT TO DO
+↓
+KICK / MOVE / DEFEND
+↓
+INTERACT WITH OPPONENTS
+↓
+GOAL / TURNOVER
+↓
+REACTION / FEEDBACK
+↓
+RESET
+↓
+PLAY AGAIN
+
+The player should constantly make small decisions around:
+- positioning
+- chasing
+- kicking
+- protecting the ball
+- grabbing
+- pushing
+- jumping
+- aerial kicks
+- recovering after impacts
+- teamwork
+
+The game should be understandable at a glance but contain enough depth for mastery.
+
+---
+
+# 05 — THE HTML DOCUMENTS
+
+You are being given multiple HTML documents created during the previous design process.
+
+They cover areas including:
+- movement
+- physics
+- collision
+- ball interaction
+- player interaction
+- hitboxes
+- state machines
+- actions
+- match rules
+- football actions
+- animation
+- game feel
+- camera
+- mobile movement
+- jump
+- kick
+- grab
+- environment
+- 3D art direction
+- other gameplay and technical systems
+
+IMPORTANT:
+
+THE HTML FILES ARE DESIGN DOCUMENTS.
+
+They are NOT automatically the source of truth.
+
+They may contain:
+- confirmed decisions
+- design principles
+- technical proposals
+- hypotheses
+- possible solutions
+- tuning ideas
+- architectural concepts
+- things that may no longer be necessary
+
+Read every HTML carefully, one by one.
+
+Do not skip a document because it looks redundant.
+
+---
+
+# 06 — FIRST RULE: DO NOT TOUCH THE CODE IMMEDIATELY
+
+Before making significant code changes:
+
+PERFORM A TECHNICAL AUDIT.
+
+First understand:
+1. What currently exists.
+2. What is already implemented.
+3. What works.
+4. What partially works.
+5. What is broken.
+6. What architecture already exists.
+7. Which systems overlap with the HTMLs.
+8. Which systems are missing.
+9. Which systems are duplicated.
+10. Which systems contradict the documentation.
+11. Which systems should be preserved.
+12. Which systems should be improved.
+13. Which systems should potentially be removed or simplified.
+
+Inspect the actual project before deciding how to implement anything.
+
+---
+
+# 07 — RESPECT THE EXISTING PROJECT
+
+The existing project has already been developed.
+
+The multiplayer is already implemented.
+The game can already be played and tested in multiplayer.
+
+DO NOT:
+- rewrite working systems unnecessarily
+- create duplicate systems
+- create a second movement controller
+- create a second input system
+- create a second ball physics system
+- replace working multiplayer systems without understanding them
+- blindly restructure the project
+- delete existing code simply because a new HTML describes another approach
+
+Instead:
+
+UNDERSTAND → EVALUATE → IMPROVE → INTEGRATE
+
+If the existing implementation is already good:
+KEEP IT.
+
+If it is good but can be improved:
+IMPROVE IT.
+
+If it conflicts with the intended Kongball design:
+REFACTOR IT.
+
+If it is redundant:
+CONSOLIDATE IT.
+
+If it is fundamentally wrong:
+REPLACE IT, but only after understanding its dependencies and explaining why.
+
+---
+
+# 08 — CONTRADICTIONS MUST NEVER BE IMPLEMENTED SILENTLY
+
+If you discover contradictions between:
+- two HTML documents
+- an HTML and existing code
+- two existing systems
+- gameplay design and technical architecture
+- art direction and actual assets
+- multiplayer architecture and gameplay logic
+
+DO NOT silently choose one and implement it.
+
+Instead:
+
+1. Identify the contradiction.
+2. Explain the two conflicting approaches.
+3. Explain the consequences of each.
+4. Recommend the best solution for Kongball.
+5. Mark the decision clearly.
+6. Then implement the chosen solution.
+
+Never hide architectural decisions.
+Never silently convert an assumption into a permanent rule.
+
+---
+
+# 09 — YOU ARE ALLOWED TO DISAGREE WITH THE DOCUMENTATION
+
+The goal is not to obey the HTML files literally.
+
+The goal is to build the best version of Kongball.
+
+If a system described in the documentation:
+- is unnecessarily complicated
+- doesn't fit the current project
+- creates unnecessary technical debt
+- hurts game feel
+- makes mobile controls worse
+- doesn't work well in multiplayer
+- is over-engineered
+- duplicates existing functionality
+- provides very little gameplay value
+
+you should say so.
+
+Explain why.
+
+Then propose a better solution.
+
+You have permission to simplify.
+You have permission to remove unnecessary systems.
+You have permission to redesign implementation details.
+
+You do NOT have permission to silently change fundamental gameplay decisions.
+
+---
+
+# 10 — CLASSIFY EVERYTHING
+
+For every major decision, classify it as:
+
+A — CONFIRMED DESIGN DECISION
+A decision that should be preserved.
+
+Example:
+ACTION + BALL = KICK
+ACTION + NO BALL = GRAB / PUSH
+
+B — APPROVED BUT TUNABLE
+The system is correct, but parameters need playtesting.
+
+Examples:
+- jump height
+- gravity
+- acceleration
+- deceleration
+- air control
+- kick power
+- knockback
+- grab range
+
+C — PROPOSAL / HYPOTHESIS
+An idea that should be evaluated rather than automatically implemented.
+
+D — CONFLICT / OPEN QUESTION
+Something that requires a decision because documentation, code or systems disagree.
+
+---
+
+# 11 — TECHNICAL AUDIT
+
+Inspect and map:
+
+PLAYER
+MOVEMENT
+INPUT
+GROUNDING
+JUMP
+ACTION SYSTEM
+BALL
+BALL PHYSICS
+BALL INTERACTION
+PLAYER COLLISION
+GRAB
+KICK
+IMPACT
+RAGDOLL
+MATCH
+GOAL
+RESET
+CAMERA
+ANIMATION
+VFX
+AUDIO
+UI
+NETWORKING
+MULTIPLAYER
+3D ASSETS
+ENVIRONMENT
+PERFORMANCE
+
+For every system determine:
+- current implementation
+- responsibility
+- dependencies
+- current quality
+- relationship with documentation
+- required changes
+- priority
+
+---
+
+# 12 — GAMEPLAY CORE PRIORITY
+
+Prioritize:
+
+## TIER 1 — CORE GAMEPLAY
+1. Player movement
+2. Jump
+3. Ball physics
+4. Ball interaction
+5. Kick
+6. Grab / Push
+7. Player-player interaction
+8. Goal detection
+9. Match reset
+10. Match rules
+
+## TIER 2 — GAME FEEL
+11. Animation
+12. Camera
+13. Knockback
+14. Stumble
+15. Ragdoll
+16. VFX
+17. SFX
+18. Feedback
+
+## TIER 3 — PRESENTATION
+19. Character visuals
+20. Ball visuals
+21. Goal visuals
+22. Field visuals
+23. Environment
+24. Crowd
+25. UI
+
+## TIER 4 — POLISH
+26. Lighting
+27. Materials
+28. Particles
+29. Optimization
+30. Mobile performance
+
+Do not spend significant development time polishing visual details while the core gameplay loop is not solid.
+
+---
+
+# 13 — MOVEMENT
+
+Movement should be:
+- responsive
+- camera-relative
+- readable
+- playful
+- slightly physical
+- distinctly monkey-like
+
+The monkey should NOT move like a standard human football character.
+
+Animation should communicate:
+- agility
+- playfulness
+- weight
+- elasticity
+- slightly goofy physicality
+
+The underlying movement must remain controlled and reliable.
+
+Do not allow funny physics to destroy player control.
+
+---
+
+# 14 — JUMP
+
+Jump is one of the two main right-side actions.
+
+Evaluate the existing movement documentation and implementation for:
+- grounded state
+- jump velocity
+- gravity
+- fall multiplier
+- coyote time
+- jump buffer
+- air control
+- landing
+- recovery
+
+Jump should feel:
+
+FAST
+RESPONSIVE
+PHYSICAL
+PLAYFUL
+
+Air control should exist but be limited.
+
+---
+
+# 15 — ACTION SYSTEM
+
+ACTION is contextual.
+
+WITH BALL:
+ACTION → KICK
+
+WITHOUT BALL:
+ACTION → GRAB / PUSH
+
+Implement this as a contextual action system rather than two unrelated button systems.
+
+The input communicates:
+
+ACTION INTENT
+
+The game then determines:
+- current player state
+- ball state
+- target availability
+- distance
+- angle
+- action availability
+- action priority
+
+and resolves the correct action.
+
+---
+
+# 16 — KICK
+
+Kick should be responsive and satisfying.
+
+It should have:
+- input
+- intent
+- validation
+- windup
+- active contact window
+- ball resolution
+- launch
+- follow-through
+- recovery
+
+Animation communicates the kick.
+
+Gameplay determines when contact is valid.
+
+Animation must NOT become the authoritative source of ball collision.
+
+The ball remains an independent gameplay object.
+
+---
+
+# 17 — JUMP + KICK
+
+This interaction is especially important.
+
+The player must be able to jump and potentially kick while airborne.
+
+However:
+
+JUMP DOES NOT AUTOMATICALLY MEAN AIR KICK.
+
+The player must be in a valid ball interaction context.
+
+Conceptually:
+
+JUMP
+↓
+AIRBORNE
+↓
+ACTION
+↓
+IS BALL IN VALID AIR KICK ZONE?
+↓
+YES → AIR KICK
+NO → NO VALID KICK
+
+The air kick should reuse the same fundamental ball interaction architecture as the ground kick.
+
+Do not create an entirely separate ball physics system for air kicks.
+
+---
+
+# 18 — GRAB / PUSH
+
+Without the ball, ACTION becomes player interaction.
+
+The player can:
+- grab
+- hold
+- push
+- release
+- potentially throw / knock back if supported by the existing design
+
+Use explicit gameplay queries / hitboxes.
+
+Do not rely on random Rigidbody collisions to determine whether a grab succeeded.
+
+Target selection should consider:
+- range
+- angle
+- state
+- availability
+- priority
+
+The result must be deterministic and readable.
+
+---
+
+# 19 — PHYSICS PHILOSOPHY
+
+Kongball should use physics to create:
+- weight
+- impact
+- comedy
+- controlled unpredictability
+
+Physics should NOT replace gameplay logic.
+
+Important interactions should be authored:
+- kick
+- grab
+- push
+- tackle
+- knockback
+- goal
+- ball interaction
+
+The game should feel physical without becoming physically unreliable.
+
+---
+
+# 20 — MULTIPLAYER
+
+Multiplayer already exists.
+
+Do NOT build it from scratch.
+
+Audit the existing multiplayer implementation and make sure new systems integrate correctly.
+
+Pay special attention to:
+- player movement
+- jump
+- ball authority
+- kick
+- grab
+- push
+- player collisions
+- knockback
+- ragdoll
+- goal detection
+- match state
+- resets
+- action validation
+
+Do not introduce client-authoritative shortcuts for gameplay-critical outcomes.
+
+Do not create a new networking architecture unless the existing one is fundamentally incapable of supporting the intended gameplay.
+
+If the current multiplayer architecture is good, preserve it.
+
+---
+
+# 21 — MATCH RULES
+
+The game is 3v3.
+
+Match logic must remain separate from player logic.
+
+Audit the existing implementation against states such as:
+
+BOOT
+LOBBY
+LOADING
+COUNTDOWN
+PLAYING
+GOAL
+RESET
+MATCH END
+RESULTS
+
+Goals, score, match timer, reset and victory conditions must remain authoritative.
+
+Presentation reacts to match events.
+
+Presentation must not decide match outcomes.
+
+---
+
+# 22 — ANIMATION
+
+Preserve the monkey identity.
+
+Movement should feel:
+- playful
+- elastic
+- slightly goofy
+- physical
+- exaggerated
+
+Important animations include:
+- idle
+- walk
+- run
+- sprint
+- start
+- stop
+- turn
+- jump
+- landing
+- kick
+- air kick
+- grab
+- holding
+- push
+- release
+- hit reaction
+- knockback
+- stumble
+- ragdoll
+- recovery
+- goal celebration
+- victory
+- defeat
+
+Gameplay state determines what is happening.
+Animation determines how it looks.
+
+---
+
+# 23 — GAME FEEL
+
+Game feel is a priority.
+
+Meaningful interactions should communicate themselves through:
+- animation
+- camera
+- VFX
+- SFX
+- haptics where appropriate
+- character reaction
+
+Example:
+
+KICK
+→ animation
+→ ball launch
+→ camera response
+→ sound
+→ impact feedback
+
+GRAB
+→ character animation
+→ target reaction
+→ sound
+→ optional camera/VFX
+
+GOAL
+→ match event
+→ character reaction
+→ camera
+→ VFX
+→ audio
+→ crowd reaction
+
+Use semantic gameplay events rather than random feedback.
+
+---
+
+# 24 — 3D ASSET PIPELINE
+
+The visual side of the project is now also being consolidated.
+
+Existing / incoming 3D assets include:
+
+1. Monkey character
+2. Football
+3. Wooden goal
+4. Field / ground asset
+5. Future environment / side-of-field assets
+
+The aesthetic target is a cohesive stylized 3D cartoon world.
+
+The monkey model is one of the main visual references.
+
+Other assets must feel like they belong to the same world.
+
+---
+
+# 25 — 3D ASSETS ARE REAL GAME ASSETS
+
+DO NOT treat the 3D models as decorative objects.
+
+For each asset, inspect and establish:
+- scale
+- orientation
+- pivot
+- hierarchy
+- materials
+- textures
+- shaders
+- colliders
+- physics materials
+- collision layers
+- gameplay layers
+- prefabs
+- naming
+- transforms
+- performance
+- LOD where useful
+- interaction requirements
+
+Separate visual mesh and gameplay collision where appropriate.
+
+Example:
+
+GOAL
+VISUAL
+- wooden frame
+- rope
+- net
+- decorative elements
+
+GAMEPLAY
+- goal trigger
+- collision
+- boundary logic
+
+BALL
+VISUAL
+- ball mesh
+- material
+
+GAMEPLAY
+- collider
+- rigidbody / physics
+- ball interaction system
+
+FIELD
+VISUAL
+- grass
+- field markings
+- ground details
+
+GAMEPLAY
+- stable collision surface
+- boundary volumes
+
+---
+
+# 26 — CURRENT ENVIRONMENT PRIORITY
+
+The immediate visual environment consists primarily of:
+
+FIELD
+GOALS
+BALL
+CHARACTERS
+
+The final jungle/stadium environment will be built progressively.
+
+The sides of the field / full stands / jungle environment are NOT the immediate priority.
+
+Do NOT block gameplay development waiting for the final environment.
+
+The current field should nevertheless be designed so the future environment can be added cleanly around it.
+
+The field is rectangular.
+
+Visual direction:
+- cartoon
+- saturated
+- bright
+- playful
+- jungle-inspired
+- wooden
+- monkey-built
+- toy-like
+
+---
+
+# 27 — 3D FIELD INTEGRATION
+
+Treat the field as a modular environment rather than one giant undifferentiated mesh.
+
+Think in terms of:
+
+FIELD
+├── Gameplay Ground
+├── Visual Ground
+├── Field Lines
+└── Boundary
+
+GOAL
+├── Visual
+└── Gameplay
+
+ENVIRONMENT
+├── Future stands
+├── Future jungle
+├── Future props
+└── Future crowd
+
+Do not unnecessarily combine everything into one mesh.
+
+Maintain clean separation between gameplay geometry and visual geometry.
+
+---
+
+# 28 — PERFORMANCE
+
+This is a mobile-first game.
+
+Consider:
+- frame rate
+- CPU
+- GPU
+- physics cost
+- network cost
+- animation cost
+- draw calls
+- memory
+- asset complexity
+- VFX complexity
+
+Do not over-engineer.
+
+Do not sacrifice performance for invisible technical complexity.
+
+First create clean architecture.
+
+Then profile.
+
+Then optimize based on actual bottlenecks.
+
+---
+
+# 29 — TUNING VALUES
+
+Numbers in the HTML documents should generally be treated as starting points unless explicitly marked as fixed.
+
+Examples:
+- acceleration
+- deceleration
+- jump height
+- gravity
+- air control
+- kick power
+- kick range
+- grab range
+- knockback
+- action timing
+- cooldowns
+
+Make these easy to tune.
+
+Prefer centralized configuration over magic numbers scattered throughout gameplay code.
+
+---
+
+# 30 — FIRST SESSION WORKFLOW
+
+This session MUST follow this order.
+
+## PHASE 1 — DISCOVERY
+
+Read ALL HTML documents.
+
+Read them one by one.
+
+Do not skip documents because they appear redundant.
+
+Understand:
+- what each document is trying to solve
+- what decisions it contains
+- what systems it describes
+- how it relates to other documents
+
+Also inventory all provided 3D assets.
+
+## PHASE 2 — PROJECT AUDIT
+
+Inspect the existing project.
+
+Understand:
+- existing architecture
+- existing gameplay
+- existing multiplayer
+- existing scenes
+- existing assets
+- existing player
+- existing ball
+- existing physics
+- existing input
+- existing match logic
+
+## PHASE 3 — DOCUMENT ↔ PROJECT COMPARISON
+
+Compare the documentation with the actual project.
+
+Identify:
+
+IMPLEMENTED
+PARTIALLY IMPLEMENTED
+MISSING
+DUPLICATED
+OUTDATED
+CONTRADICTORY
+UNNECESSARY
+
+## PHASE 4 — TECHNICAL AUDIT
+
+Before changing major systems, produce a technical audit.
+
+For each major system explain:
+
+CURRENT STATE
+DOCUMENTATION STATE
+PROBLEMS
+RECOMMENDATION
+PRIORITY
+
+## PHASE 5 — CONTRADICTION RESOLUTION
+
+Find contradictions.
+
+Do not silently resolve them.
+
+Create a clear list of:
+
+CONFLICT
+OPTIONS
+RECOMMENDED SOLUTION
+REASON
+
+## PHASE 6 — GAMEPLAY ARCHITECTURE
+
+Consolidate the best ideas into a coherent architecture.
+
+The goal is not to preserve every line from every document.
+
+The goal is:
+
+ONE GAMEPLAY ARCHITECTURE.
+
+## PHASE 7 — PRIORITIZATION
+
+Determine what should be implemented first.
+
+Prioritize:
+1. core movement
+2. jump
+3. ball
+4. kick
+5. grab/push
+6. player interactions
+7. goal
+8. match flow
+9. game feel
+10. animation
+11. 3D integration
+12. polish
+
+## PHASE 8 — IMPLEMENTATION
+
+Only after the audit and synthesis should you start making substantial changes.
+
+Implement incrementally.
+
+Do not make a massive blind rewrite.
+
+After each meaningful system:
+- test
+- inspect
+- fix
+- verify multiplayer
+- continue
+
+## PHASE 9 — PLAYTEST
+
+Actually play/test the game.
+
+Do not assume implementation is good because the architecture looks good.
+
+Evaluate:
+- movement feel
+- jump feel
+- kick responsiveness
+- grab responsiveness
+- ball behavior
+- player collisions
+- readability
+- multiplayer consistency
+- game loop
+- fun
+
+## PHASE 10 — MASTER DOCUMENT
+
+Create/update a:
+
+MASTER KONGBALL DEVELOPMENT DOCUMENT
+
+This becomes the consolidated source of truth.
+
+It should contain:
+
+01 — Game Vision
+02 — Core Gameplay
+03 — Player Controller
+04 — Movement
+05 — Jump
+06 — Action System
+07 — Kick
+08 — Grab / Push
+09 — Ball Physics
+10 — Player Physics
+11 — Match Rules
+12 — Multiplayer
+13 — Camera
+14 — Animation
+15 — Game Feel
+16 — Mobile Input
+17 — 3D Asset Pipeline
+18 — Character Art
+19 — Environment Art
+20 — UI
+21 — Audio
+22 — Performance
+23 — Testing
+24 — Open Questions
+25 — Future Features
+
+---
+
+# 31 — MASTER IMPLEMENTATION STATUS
+
+At the end of the audit create an implementation status table covering:
+
+- Movement
+- Jump
+- Action
+- Kick
+- Grab / Push
+- Ball Physics
+- Player Physics
+- Goal
+- Match Rules
+- Animation
+- Camera
+- Game Feel
+- Multiplayer
+- Monkey Asset
+- Ball Asset
+- Goal Asset
+- Field Asset
+- Environment
+
+For each, show:
+- status: IMPLEMENTED / PARTIAL / TODO
+- notes
+- priority
+
+---
+
+# 32 — OPEN QUESTIONS
+
+Create a dedicated OPEN QUESTIONS section.
+
+Only put genuinely unresolved questions there.
+
+Do not stop the entire development process for every minor uncertainty.
+
+When possible:
+
+choose the most reversible solution,
+document the assumption,
+continue development.
+
+For major gameplay decisions that materially affect architecture:
+
+STOP,
+explain the issue,
+propose options,
+recommend one.
+
+---
+
+# 33 — ENGINEERING PRINCIPLES
+
+Follow these principles throughout the project:
+
+1. Gameplay authority first.
+2. Clear separation of responsibilities.
+3. Do not duplicate systems.
+4. Do not silently overwrite decisions.
+5. Do not silently resolve contradictions.
+6. Keep gameplay deterministic where necessary.
+7. Keep presentation separate from gameplay authority.
+8. Prefer simple systems over unnecessary complexity.
+9. Prefer data-driven tuning.
+10. Make mobile controls responsive.
+11. Preserve multiplayer compatibility.
+12. Build for iteration.
+13. Test actual gameplay, not just code.
+14. Optimize based on evidence.
+15. Keep the code understandable.
+
+---
+
+# 34 — ALWAYS ASK "WHY?"
+
+For every major architectural or gameplay decision, reason in this order:
+
+WHAT are we trying to achieve?
+
+WHY is this important for Kongball?
+
+WHAT is the simplest solution?
+
+WHAT already exists?
+
+CAN we improve the existing system instead of replacing it?
+
+WHAT are the multiplayer implications?
+
+WHAT are the gameplay implications?
+
+WHAT are the performance implications?
+
+HOW will we test it?
+
+Do not optimize for technical elegance alone.
+
+Optimize for:
+
+GAMEPLAY VALUE
++
+PLAYER EXPERIENCE
++
+RELIABILITY
++
+MULTIPLAYER CONSISTENCY
++
+MAINTAINABILITY
+
+---
+
+# 35 — MOST IMPORTANT GAMEPLAY PRINCIPLE
+
+Kongball should have extremely simple controls but rich interactions.
+
+The player should only need to think:
+
+MOVE
+JUMP
+ACTION
+
+But ACTION can produce different meaningful outcomes depending on context.
+
+Depth should emerge from:
+- positioning
+- timing
+- ball physics
+- opponent positioning
+- jump timing
+- kick timing
+- grab timing
+- movement
+- risk/reward
+- teamwork
+- spatial awareness
+
+---
+
+# 36 — MOST IMPORTANT ART PRINCIPLE
+
+Everything should look like it belongs to the same game.
+
+The monkey,
+the ball,
+the goal,
+the field,
+the future jungle,
+the stands,
+the props
+
+must share:
+- shape language
+- proportions
+- material language
+- color language
+- cartoon exaggeration
+- toy-like physicality
+
+Do not integrate a realistic asset simply because it technically works.
+
+Visual consistency matters.
+
+---
+
+# 37 — MOST IMPORTANT DEVELOPMENT PRINCIPLE
+
+Do not think:
+
+"I need to implement all these documents."
+
+Think:
+
+"I need to understand everything that has already been designed, understand everything that already exists in the project, determine what is actually valuable, consolidate it into one coherent architecture, and then improve the game."
+
+---
+
+# 38 — EXPECTED BEHAVIOR
+
+During this session, behave as:
+- gameplay programmer
+- technical designer
+- physics / gameplay engineer
+- systems architect
+- technical artist when dealing with 3D integration
+- critical reviewer of the existing implementation
+
+Do not behave like a passive code generator.
+
+Challenge assumptions.
+Identify unnecessary complexity.
+Identify missing systems.
+Identify contradictions.
+Preserve good existing work.
+Improve weak existing work.
+Make reasonable decisions independently.
+
+But never silently change fundamental gameplay decisions.
+
+---
+
+# 39 — FINAL SESSION OBJECTIVE
+
+The objective is NOT simply to produce code.
+
+The objective is to leave the project in a significantly better state:
+
+TECHNICALLY
+GAMEPLAY-WISE
+ARCHITECTURALLY
+VISUALLY
+AND DOCUMENTATION-WISE.
+
+At the end of the session we should have:
+
+1. A clear understanding of the existing project.
+2. A technical audit.
+3. A comparison between existing code and documentation.
+4. Identified contradictions.
+5. Resolved or documented contradictions.
+6. A consolidated gameplay architecture.
+7. Improved core gameplay.
+8. Correct integration of the new 3D assets.
+9. A clear implementation status.
+10. A Master Kongball Development Document.
+11. A list of remaining priorities.
+12. A list of genuine open questions.
+
+Most importantly:
+
+THE GAME SHOULD FEEL MORE LIKE KONGBALL AFTER THIS SESSION THAN IT DID BEFORE IT STARTED.
+
+---
+
+# 40 — START NOW
+
+Do not immediately rewrite code.
+
+Start with:
+
+STEP 1:
+Inventory all provided HTML documents and 3D assets.
+
+STEP 2:
+Read every HTML document carefully.
+
+STEP 3:
+Inspect the existing project.
+
+STEP 4:
+Build the technical audit.
+
+STEP 5:
+Compare documentation with implementation.
+
+STEP 6:
+Identify contradictions, duplications and missing systems.
+
+STEP 7:
+Propose the consolidated architecture.
+
+STEP 8:
+Define implementation priorities.
+
+STEP 9:
+Begin implementation of the highest-value improvements.
+
+STEP 10:
+Test continuously, including multiplayer.
+
+STEP 11:
+Integrate the 3D assets progressively.
+
+STEP 12:
+Create/update the MASTER KONGBALL DEVELOPMENT DOCUMENT.
+
+Do not skip the audit.
+Do not blindly implement.
+Do not silently resolve contradictions.
+Do not rebuild working systems without a reason.
+
+Understand first.
+Decide second.
+Implement third.
+Test fourth.
+Document fifth.
+
+This is a deep development session, not a quick coding task.

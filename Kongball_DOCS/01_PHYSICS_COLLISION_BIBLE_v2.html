@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Third-Person Arcade Football — Physics & Collision Bible</title>
+<style>
+:root{--bg:#0b0d10;--panel:#11151a;--panel2:#171c22;--text:#eef2f6;--muted:#a8b0ba;--line:#29313a;--accent:#7ee787;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}
+main{max-width:1080px;margin:auto;padding:56px 28px 100px}
+h1{font-size:48px;line-height:1.05;letter-spacing:-1.5px;margin:0 0 16px}
+h2{font-size:30px;line-height:1.15;margin:58px 0 18px;padding-top:18px;border-top:1px solid var(--line)}
+h3{font-size:20px;margin-top:32px}
+p,li{color:#d8dde3}strong{color:#fff}
+.hero{background:linear-gradient(145deg,#151b21,#0d1115);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:35px}
+.kicker{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:13px}
+.subtitle{font-size:20px;color:var(--muted);max-width:850px}
+.rule{border-left:4px solid var(--accent);background:var(--panel);padding:18px 20px;margin:22px 0;border-radius:0 12px 12px 0}
+.warning{border-left-color:var(--warn)}
+.danger{border-left-color:var(--danger)}
+pre{background:#07090b;border:1px solid var(--line);padding:20px;border-radius:12px;overflow:auto;color:#d9e2ea;line-height:1.45}
+code{background:#171c22;padding:2px 6px;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:20px 0;background:var(--panel)}
+th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:#fff;background:var(--panel2)}td{color:#cfd6dd}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin:3px;color:#dce3e9;font-size:13px}
+.check{list-style:"✓  "}
+.no{list-style:"✕  "}
+.small{font-size:14px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+
+<section class="hero">
+<div class="kicker">Gameplay Engineering Bible · KB 01</div>
+<h1>Physics & Collision System</h1>
+<p class="subtitle">A senior-level specification for the physics, collision and impact layer of a third-person arcade football game with cartoon monkey characters.</p>
+<p><strong>Design target:</strong> Stumble Guys-like accessibility and physical comedy combined with football interactions that feel precise, readable and satisfying.</p>
+</section>
+
+<div class="rule">
+<strong>CORE PRINCIPLE</strong><br>
+We are not simulating reality. We are simulating a <strong>gameplay reality</strong> that feels physically convincing, responds to player intent, remains fair, and produces spectacular moments.
+</div>
+
+<h2>01 — What Physics Is Responsible For</h2>
+<p>Physics is not "the system that makes everything move." It is the layer that answers questions such as:</p>
+<ul>
+<li>Can these two objects occupy the same space?</li>
+<li>What happens when they contact each other?</li>
+<li>How does the ball respond to an impulse?</li>
+<li>How does a player react to a tackle?</li>
+<li>How does an object behave on a slope, wall or ramp?</li>
+<li>How does the world constrain gameplay movement?</li>
+</ul>
+<p>Physics should <strong>not</strong> decide game design by accident. If a physically correct result is bad gameplay, the gameplay system wins.</p>
+
+<h2>02 — The Four Layers</h2>
+<pre>PLAYER INTENT
+     ↓
+GAMEPLAY RULES
+     ↓
+SIMULATION / PHYSICS
+     ↓
+PRESENTATION</pre>
+
+<h3>Player Intent</h3>
+<p>What the player is trying to do: run, jump, tackle, kick, turn, chase the ball.</p>
+
+<h3>Gameplay Rules</h3>
+<p>What the game permits: tackle windows, knockback tiers, ball interaction radius, invulnerability, recovery, goal rules.</p>
+
+<h3>Simulation</h3>
+<p>Positions, velocities, contacts, impulses, collision resolution, gravity and other physical state.</p>
+
+<h3>Presentation</h3>
+<p>Animation, mesh deformation, VFX, audio, camera shake and haptics. Presentation communicates the simulation; it must not secretly redefine it.</p>
+
+<div class="rule danger">
+<strong>Never reverse the dependency.</strong><br>
+The monkey animation must not decide where the authoritative player is. The visible mesh follows gameplay state.
+</div>
+
+<h2>03 — Gameplay Physics vs Real Physics</h2>
+<p>Real-world mass, friction and momentum are useful mental models, but they are not our design constraints.</p>
+
+<table>
+<tr><th>Realistic approach</th><th>Arcade approach</th></tr>
+<tr><td>Accurate mass ratios</td><td>Designer-controlled response strength</td></tr>
+<tr><td>Physical friction</td><td>Readable braking and ball roll</td></tr>
+<tr><td>Full rigidbody character</td><td>Controlled character locomotion</td></tr>
+<tr><td>Natural collision outcome</td><td>Authored impact tiers</td></tr>
+<tr><td>Emergent ragdoll everywhere</td><td>Ragdoll only when gameplay calls for it</td></tr>
+</table>
+
+<p>The correct question is never "Is this physically accurate?" It is:</p>
+<div class="rule"><strong>"Does this produce the intended player experience consistently?"</strong></div>
+
+<h2>04 — Character Physics Architecture</h2>
+<pre>MonkeyPlayer
+│
+├── Gameplay Root
+│   ├── Character Controller
+│   ├── Movement State
+│   ├── Velocity State
+│   └── Collision State
+│
+├── Interaction Layer
+│   ├── Body Collider
+│   ├── Hurtboxes
+│   ├── Tackle Hitbox
+│   └── Ball Interaction Zones
+│
+└── Visual Root
+    ├── Monkey Mesh
+    ├── Skeleton
+    ├── Animator
+    ├── VFX
+    └── Secondary Motion</pre>
+
+<p>The character should normally be a <strong>controlled gameplay actor</strong>, not a loose rigidbody that is allowed to determine its own locomotion.</p>
+
+<h2>05 — The Character Collider</h2>
+<p>Use a simple, stable collider for the main body. The exact cartoon anatomy must not dictate gameplay collision.</p>
+
+<div class="rule">
+<strong>The monkey may have an enormous head, long arms, huge feet and a tail.</strong><br>
+None of those should accidentally make the player wider, taller or harder to control.
+</div>
+
+<p>The collider should be:</p>
+<ul class="check">
+<li>Stable while running.</li>
+<li>Stable during camera rotation.</li>
+<li>Predictable near walls.</li>
+<li>Simple enough for multiplayer simulation.</li>
+<li>Independent from the render mesh.</li>
+<li>Easy to visualize in debug mode.</li>
+</ul>
+
+<h2>06 — Collision Is Not Interaction</h2>
+<p>This distinction is foundational.</p>
+
+<table>
+<tr><th>System</th><th>Purpose</th></tr>
+<tr><td>Collider</td><td>Physical/environmental occupancy.</td></tr>
+<tr><td>Hurtbox</td><td>Receives gameplay hits.</td></tr>
+<tr><td>Hitbox</td><td>Produces a gameplay interaction during an active window.</td></tr>
+<tr><td>Sensor / Query</td><td>Detects something without physically colliding.</td></tr>
+</table>
+
+<p>A tackle should not require two full character colliders to physically slam together and hope the physics engine produces a good result.</p>
+
+<p>Instead:</p>
+<pre>Tackle input
+   ↓
+Tackle state
+   ↓
+Tackle hitbox
+   ↓
+Find valid targets
+   ↓
+Gameplay interaction
+   ↓
+Apply authored response</pre>
+
+<h2>07 — Collision Layers</h2>
+<p>Define a collision matrix before writing feature code.</p>
+
+<pre>PLAYER_BODY
+PLAYER_HURTBOX
+PLAYER_HITBOX
+BALL
+WORLD
+GOAL
+TRIGGER
+SENSOR</pre>
+
+<p>Example design intent:</p>
+<ul>
+<li>Player body collides with world.</li>
+<li>Player body should not physically collide with its own hitboxes.</li>
+<li>Hitboxes query hurtboxes.</li>
+<li>Ball collides with world and appropriate gameplay geometry.</li>
+<li>Triggers detect goals and boundaries.</li>
+<li>Sensors detect nearby ball/player targets without creating physical forces.</li>
+</ul>
+
+<div class="rule warning">
+Do not let collision configuration emerge organically as scripts are added. A chaotic collision matrix becomes one of the hardest bugs to diagnose later.
+</div>
+
+<h2>08 — Contact Resolution</h2>
+<p>When a collision occurs, do not immediately translate it into a force. First classify the contact.</p>
+
+<pre>CONTACT
+  ↓
+Who touched whom?
+  ↓
+Relative position / direction
+  ↓
+Relative velocity
+  ↓
+Current gameplay states
+  ↓
+Active action?
+  ↓
+Collision priority
+  ↓
+Choose response
+  ↓
+Apply response
+  ↓
+Emit presentation event</pre>
+
+<p>The response should be a deliberate gameplay decision.</p>
+
+<h2>09 — Relative Velocity</h2>
+<p>Impact strength should generally depend on how objects are moving relative to each other, not simply on the fact that two colliders touched.</p>
+
+<p>A slow shoulder brush and a full-speed tackle should not have the same result.</p>
+
+<p>Useful inputs to the impact model:</p>
+<ul>
+<li>Relative velocity magnitude.</li>
+<li>Direction of relative velocity.</li>
+<li>Attacking player's current action.</li>
+<li>Target's current state.</li>
+<li>Mass or authored resistance.</li>
+<li>Whether the target is grounded.</li>
+<li>Cooldown / invulnerability state.</li>
+</ul>
+
+<h2>10 — Impact Tiers</h2>
+<p>Use a common language across the entire game:</p>
+
+<table>
+<tr><th>Tier</th><th>Response</th><th>Typical use</th></tr>
+<tr><td>0</td><td>No gameplay reaction</td><td>Minor contact</td></tr>
+<tr><td>1</td><td>Micro reaction</td><td>Soft bump</td></tr>
+<tr><td>2</td><td>Stagger</td><td>Medium collision</td></tr>
+<tr><td>3</td><td>Stumble</td><td>Strong contact</td></tr>
+<tr><td>4</td><td>Knockback</td><td>Hard tackle</td></tr>
+<tr><td>5</td><td>Fall</td><td>Severe impact</td></tr>
+<tr><td>6</td><td>Ragdoll</td><td>Big, deliberate cartoon moment</td></tr>
+</table>
+
+<p>These are <strong>gameplay states</strong>, not direct physics equations.</p>
+
+<h2>11 — Push vs Knockback</h2>
+<p>Do not treat every player collision as knockback.</p>
+
+<h3>Soft Push</h3>
+<p>Maintains player control and prevents overlapping.</p>
+
+<h3>Hard Push</h3>
+<p>Temporarily changes velocity but preserves control.</p>
+
+<h3>Knockback</h3>
+<p>Temporarily overrides normal locomotion.</p>
+
+<h3>Ragdoll</h3>
+<p>Suspends normal locomotion and transfers control to a controlled physical/animation reaction.</p>
+
+<p>Each should have its own tuning parameters and recovery behaviour.</p>
+
+<h2>12 — Avoiding the "Physics Soup" Problem</h2>
+<p>A common failure mode in multiplayer arcade games is allowing every system to apply forces independently.</p>
+
+<pre>Movement → force
+Tackle → force
+Collision → force
+Animation → movement
+Ragdoll → force
+Ball → force
+Network correction → teleport
+                ↓
+          PHYSICS SOUP</pre>
+
+<p>Instead, use an explicit movement/impact authority.</p>
+
+<pre>Normal locomotion
+      ↓
+Action override
+      ↓
+Impact override
+      ↓
+Ragdoll
+      ↓
+Recovery
+      ↓
+Normal locomotion</pre>
+
+<p>Only the active authority should control the character's final gameplay velocity.</p>
+
+<h2>13 — Gravity</h2>
+<p>Gravity is a tuning parameter, not a sacred constant.</p>
+
+<p>Expose at least:</p>
+<ul>
+<li>Gravity strength.</li>
+<li>Terminal fall speed.</li>
+<li>Jump launch velocity.</li>
+<li>Fall multiplier.</li>
+<li>Air-control multiplier.</li>
+</ul>
+
+<p>The desired perception is:</p>
+<pre>TAKEOFF → CLEAR APEX → DECISIVE FALL → CLEAN LANDING</pre>
+
+<p>Not necessarily a physically correct parabola.</p>
+
+<h2>14 — Grounding</h2>
+<p>Grounding is one of the highest-risk systems because tiny errors propagate into movement, animation, jumping and networking.</p>
+
+<p>Ground detection should account for:</p>
+<ul>
+<li>Ground normal.</li>
+<li>Slope angle.</li>
+<li>Small steps.</li>
+<li>Edges.</li>
+<li>Moving platforms.</li>
+<li>Uneven terrain.</li>
+<li>Temporary contact during impacts.</li>
+</ul>
+
+<div class="rule">
+<strong>Never define grounded solely as velocity.y == 0.</strong><br>
+Collision resolution can produce tiny numerical values that make this unreliable.
+</div>
+
+<h2>15 — Slopes</h2>
+<p>Movement should respect the surface normal where appropriate. Projecting intended movement onto the walkable ground plane prevents the character from visually floating or cutting into slopes.</p>
+
+<p>Expose:</p>
+<ul>
+<li>Maximum walkable slope.</li>
+<li>Down-slope behaviour.</li>
+<li>Up-slope acceleration modifier.</li>
+<li>Sliding threshold, if used.</li>
+</ul>
+
+<h2>16 — Stairs & Steps</h2>
+<p>Cartoon characters must never visibly "fight" every tiny stair edge.</p>
+
+<p>Define:</p>
+<ul>
+<li>Maximum step height.</li>
+<li>Step detection.</li>
+<li>Step smoothing.</li>
+<li>Landing behaviour.</li>
+</ul>
+
+<p>Test with exaggerated monkey feet because the visual mesh and gameplay collider are intentionally different.</p>
+
+<h2>17 — Ball Physics Boundary</h2>
+<p>The ball deserves its own system. The physics layer provides the simulation, but football gameplay decides how the ball is contacted.</p>
+
+<pre>Player intent
+   ↓
+Ball interaction
+   ↓
+Kick / tackle / touch event
+   ↓
+Ball impulse or target velocity
+   ↓
+Physics simulation
+   ↓
+Collision response
+   ↓
+Ball gameplay state</pre>
+
+<p>Do not put ball logic inside the player movement controller.</p>
+
+<h2>18 — Ball Material Behaviour</h2>
+<p>The ball can use different tuned responses for:</p>
+<ul>
+<li>Turf.</li>
+<li>Wall.</li>
+<li>Goal post.</li>
+<li>Goal net.</li>
+<li>Special arcade surfaces.</li>
+</ul>
+
+<p>Do not chase realistic material values. Tune for:</p>
+<ul>
+<li>Readability.</li>
+<li>Predictability.</li>
+<li>Match pacing.</li>
+<li>Fun rebounds.</li>
+</ul>
+
+<h2>19 — Energy & Stability</h2>
+<p>Repeated collisions can accidentally inject energy into a simulation. This is especially dangerous with balls trapped between players, walls or corners.</p>
+
+<p>Guard against:</p>
+<ul>
+<li>Infinite bouncing.</li>
+<li>Exploding velocities.</li>
+<li>Player stacking.</li>
+<li>Objects vibrating in corners.</li>
+<li>Ball tunnelling at high speed.</li>
+<li>Repeated collision callbacks applying the same effect.</li>
+</ul>
+
+<div class="rule danger">
+<strong>Every physical interaction must have an upper bound.</strong><br>
+If a bug can turn one kick into an infinite-energy ball, the system is not production-ready.
+</div>
+
+<h2>20 — Tunnelling & High-Speed Objects</h2>
+<p>Fast-moving balls and knockbacked players can cross a thin collider between simulation steps.</p>
+
+<p>Explicitly test high-speed cases and use appropriate collision detection / sweep queries where required.</p>
+
+<h2>21 — Fixed Simulation & Frame Rate Independence</h2>
+<p>Gameplay physics must not become stronger or weaker because the render frame rate changed.</p>
+
+<p>Test at:</p>
+<div>
+<span class="pill">30 FPS</span><span class="pill">60 FPS</span><span class="pill">120 FPS</span><span class="pill">unstable FPS</span>
+</div>
+
+<p>Equivalent inputs should produce equivalent gameplay outcomes within the defined tolerance.</p>
+
+<h2>22 — Network Authority</h2>
+<p>For multiplayer, physics is not allowed to become a cheating surface.</p>
+
+<p>Important gameplay events should be validated by the authoritative simulation:</p>
+<ul>
+<li>Kick.</li>
+<li>Tackle.</li>
+<li>Knockback.</li>
+<li>Goal.</li>
+<li>Player position constraints.</li>
+<li>Impossible acceleration/speed.</li>
+</ul>
+
+<p>Client-side prediction may make local movement feel immediate, but the authoritative state remains the source of truth.</p>
+
+<h2>23 — Cartoon Physics</h2>
+<p>The monkeys are intentionally exaggerated. That is an advantage.</p>
+
+<p>Use physics to create visual comedy:</p>
+<ul>
+<li>Strong launch on heavy tackles.</li>
+<li>Arms and legs flailing during impacts.</li>
+<li>Large but controlled bounce reactions.</li>
+<li>Brief squash on landing.</li>
+<li>Ragdoll for spectacular failures.</li>
+</ul>
+
+<p>However, cartoon physics must still obey the same gameplay rules every time.</p>
+
+<div class="rule">
+<strong>Funny ≠ random.</strong><br>
+The player should be surprised by what happened, not confused about why it happened.
+</div>
+
+<h2>24 — Physics ↔ Animation</h2>
+<p>Physics determines the gameplay event. Animation sells it.</p>
+
+<pre>TACKLE CONTACT
+      ↓
+Impact magnitude = 4
+      ↓
+Knockback state
+      ↓
+Animation: strong reaction
+      ↓
+VFX: impact burst
+      ↓
+SFX: heavy hit
+      ↓
+Camera: subtle shake
+      ↓
+Haptics</pre>
+
+<p>Do not solve weak animation by changing gameplay physics, and do not solve bad physics with animation that lies about the gameplay state.</p>
+
+<h2>25 — Physics ↔ Camera</h2>
+<p>Major physical events should emit semantic events rather than directly manipulating the camera from physics code.</p>
+
+<pre>Physics Event
+   ↓
+Impact Event
+   ├── Animation
+   ├── VFX
+   ├── SFX
+   ├── Camera
+   └── Haptics</pre>
+
+<p>This keeps systems decoupled and lets the presentation layer change without rewriting simulation.</p>
+
+<h2>26 — Physics Debug Mode</h2>
+<p>The team must be able to see what the engine believes is happening.</p>
+
+<p>Debug toggles should include:</p>
+<ul>
+<li>Character collider.</li>
+<li>Ball collider.</li>
+<li>Hitboxes / hurtboxes.</li>
+<li>Contact points.</li>
+<li>Contact normals.</li>
+<li>Velocity vectors.</li>
+<li>Desired velocity.</li>
+<li>Applied impulse.</li>
+<li>Ground normal.</li>
+<li>Current state.</li>
+<li>Collision layer.</li>
+<li>Ball trajectory.</li>
+</ul>
+
+<h2>27 — Physics Lab</h2>
+<p>Create a dedicated scene that is intentionally ugly but incredibly useful.</p>
+
+<pre>[ FLAT TEST ]
+[ SLOPE TEST ]
+[ STEP TEST ]
+[ WALL TEST ]
+[ RAMP TEST ]
+[ MOVING PLATFORM TEST ]
+
+[ PLAYER VS PLAYER ]
+[ PLAYER VS WALL ]
+[ TACKLE TEST ]
+[ KNOCKBACK TEST ]
+[ RAGDOLL TEST ]
+
+[ BALL SHOT ]
+[ BALL REBOUND ]
+[ BALL POST ]
+[ BALL GOAL ]
+[ BALL CORNER ]</pre>
+
+<p>Every physics change should be easy to reproduce in this lab.</p>
+
+<h2>28 — Automated Test Philosophy</h2>
+<p>Physics is difficult to test only by looking at the screen. Build tests around invariants.</p>
+
+<ul class="check">
+<li>Player never exceeds configured movement limits without an explicit state.</li>
+<li>Diagonal input does not increase intended movement speed.</li>
+<li>Ball velocity remains within configured safety bounds.</li>
+<li>Repeated collision cannot generate unbounded energy.</li>
+<li>Goal detection is deterministic.</li>
+<li>Players can always recover from impact states.</li>
+<li>Physics results are stable across target frame rates.</li>
+<li>Changing a monkey skin does not change gameplay collider dimensions.</li>
+<li>Network correction cannot create impossible gameplay states.</li>
+</ul>
+
+<h2>29 — Performance</h2>
+<p>Physics cost grows quickly with the number of players and interaction objects.</p>
+
+<p>Prefer:</p>
+<ul>
+<li>Simple colliders.</li>
+<li>Explicit collision layers.</li>
+<li>Queries instead of unnecessary physical bodies.</li>
+<li>Object pooling for temporary effects.</li>
+<li>Limited active ragdolls.</li>
+<li>Controlled secondary physics.</li>
+</ul>
+
+<p>Never optimize before profiling, but design the architecture so profiling has somewhere sensible to start.</p>
+
+<h2>30 — Anti-Patterns</h2>
+<ul class="no">
+<li>Using the monkey mesh as the main collider.</li>
+<li>Using a Rigidbody as the sole character movement system because it is "more realistic."</li>
+<li>Letting every script directly modify transform position.</li>
+<li>Letting every script directly add forces.</li>
+<li>Putting ball logic inside PlayerController.</li>
+<li>Using animation to teleport gameplay objects.</li>
+<li>Relying on collision callbacks for all gameplay interactions.</li>
+<li>Allowing physics to decide game rules.</li>
+<li>Using random multipliers to hide systemic problems.</li>
+<li>Adding ragdoll before normal impact states are stable.</li>
+</ul>
+
+<h2>31 — Senior Developer Decision Rules</h2>
+<div class="rule"><strong>01.</strong> Player agency beats physical realism.</div>
+<div class="rule"><strong>02.</strong> Predictability beats emergent chaos in competitive interactions.</div>
+<div class="rule"><strong>03.</strong> Surprise is good; unexplained behaviour is bad.</div>
+<div class="rule"><strong>04.</strong> The mesh is never the authoritative gameplay body.</div>
+<div class="rule"><strong>05.</strong> Use the simplest physical representation that creates the desired experience.</div>
+<div class="rule"><strong>06.</strong> Every impact needs an authored response range.</div>
+<div class="rule"><strong>07.</strong> No system may silently override another system's movement authority.</div>
+<div class="rule"><strong>08.</strong> Physics-critical parameters belong in configuration, not magic numbers.</div>
+<div class="rule"><strong>09.</strong> If a bug cannot be visualized, debugging the system is unnecessarily difficult.</div>
+<div class="rule"><strong>10.</strong> Network-critical physics must be designed as network-critical from day one.</div>
+<div class="rule"><strong>11.</strong> Never add complexity until the simpler model demonstrably fails.</div>
+<div class="rule"><strong>12.</strong> A perfect physics system is one the player never has to think about.</div>
+
+<h2>32 — Definition of Done</h2>
+<p>The Physics & Collision system is not finished when the characters collide. It is finished when:</p>
+<ul class="check">
+<li>Movement remains stable under collision.</li>
+<li>Ball physics are energetic but predictable.</li>
+<li>Player impacts have a consistent language.</li>
+<li>Cartoon reactions look spectacular without becoming random.</li>
+<li>Players cannot become permanently stuck.</li>
+<li>High-speed objects do not tunnel through the world.</li>
+<li>Frame rate does not change gameplay behaviour.</li>
+<li>Networking does not introduce impossible physical states.</li>
+<li>All important interactions are debuggable.</li>
+<li>The system can be tuned without rewriting code.</li>
+</ul>
+
+<div class="rule">
+<strong>FINAL PRINCIPLE</strong><br>
+The job of a senior gameplay engineer is not to build the most sophisticated physics system possible. It is to build the <strong>smallest, most controllable simulation that produces an extraordinary game</strong>.
+</div>
+
+<p class="small">This document is a design/engineering knowledge base for Claude. When implementing a feature, Claude should inspect the existing architecture first, identify the relevant physics authority, propose the smallest robust change, implement it, test edge cases, and only then tune values.</p>
+
+</main>
+</body>
+</html>

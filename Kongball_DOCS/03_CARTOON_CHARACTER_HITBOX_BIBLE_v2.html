@@ -1,0 +1,258 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Third-Person Arcade Football — Cartoon Character & Hitbox Bible</title>
+<style>
+:root{--bg:#0b0d10;--panel:#11151a;--panel2:#171c22;--text:#eef2f6;--muted:#a8b0ba;--line:#29313a;--accent:#7ee787;--warn:#ffd166;--danger:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}
+main{max-width:1080px;margin:auto;padding:56px 28px 100px}h1{font-size:48px;line-height:1.05;letter-spacing:-1.5px;margin:0 0 16px}
+h2{font-size:30px;line-height:1.15;margin:58px 0 18px;padding-top:18px;border-top:1px solid var(--line)}h3{font-size:20px;margin-top:32px}
+p,li{color:#d8dde3}strong{color:#fff}.hero{background:linear-gradient(145deg,#151b21,#0d1115);border:1px solid var(--line);border-radius:22px;padding:34px;margin-bottom:35px}
+.kicker{color:var(--accent);font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:13px}.subtitle{font-size:20px;color:var(--muted);max-width:850px}
+.rule{border-left:4px solid var(--accent);background:var(--panel);padding:18px 20px;margin:22px 0;border-radius:0 12px 12px 0}.warning{border-left-color:var(--warn)}.danger{border-left-color:var(--danger)}
+pre{background:#07090b;border:1px solid var(--line);padding:20px;border-radius:12px;overflow:auto;color:#d9e2ea;line-height:1.45}code{background:#171c22;padding:2px 6px;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:20px 0;background:var(--panel)}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);vertical-align:top}th{color:#fff;background:var(--panel2)}td{color:#cfd6dd}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 10px;margin:3px;color:#dce3e9;font-size:13px}.small{font-size:14px;color:var(--muted)}
+.check{list-style:"✓  "}.no{list-style:"✕  "}
+</style>
+</head><body><main>
+<section class="hero"><div class="kicker">Gameplay Engineering Bible · KB 03</div>
+<h1>Cartoon Character & Hitbox System</h1>
+<p class="subtitle">A senior-level specification for building exaggerated cartoon monkey characters whose visuals can be ridiculous while gameplay remains fair, precise, performant and network-safe.</p>
+<p><strong>Design target:</strong> Big personalities, exaggerated animation and physical comedy — with invisible gameplay geometry that remains disciplined and predictable.</p></section>
+
+<div class="rule"><strong>CORE PRINCIPLE</strong><br><strong>The mesh is not the player.</strong> The monkey is a visual representation of a gameplay entity. Visual anatomy may be exaggerated independently from gameplay collision, hitboxes and interaction ranges.</div>
+
+<h2>01 — Character Architecture</h2>
+<pre>MonkeyPlayer
+│
+├── GameplayRoot
+│   ├── Character Controller
+│   ├── Movement Motor
+│   ├── State Machine
+│   └── Collision State
+│
+├── VisualRoot
+│   ├── Monkey Mesh
+│   ├── Skeleton
+│   ├── Animator
+│   ├── Facial Rig
+│   ├── VFX
+│   └── Secondary Motion
+│
+├── Gameplay Volumes
+│   ├── Body Collider
+│   ├── Hurtboxes
+│   ├── Action Hitboxes
+│   └── Ball Interaction Zones
+│
+└── CameraTarget</pre>
+
+<p>The architecture must allow the visual prefab to change without rewriting locomotion or gameplay collision.</p>
+
+<h2>02 — Gameplay Body vs Visual Body</h2>
+<table><tr><th>Gameplay</th><th>Visual</th></tr>
+<tr><td>Position</td><td>Mesh offset</td></tr><tr><td>Collider</td><td>Visible anatomy</td></tr>
+<tr><td>Hitbox</td><td>Animation pose</td></tr><tr><td>State</td><td>Facial expression</td></tr>
+<tr><td>Velocity</td><td>Secondary motion</td></tr></table>
+
+<div class="rule danger">Never make the visible monkey mesh the authoritative source of player position, collision or interaction.</div>
+
+<h2>03 — Why Cartoon Anatomy Is Dangerous</h2>
+<p>Our characters may have:</p>
+<ul><li>Oversized heads.</li><li>Long arms.</li><li>Huge hands and feet.</li><li>Large bellies.</li><li>Long tails.</li><li>Accessories extending outside the body.</li></ul>
+<p>If we blindly generate colliders from the mesh, gameplay becomes inconsistent. A skin with a giant hat could accidentally have a larger hitbox than a skin with no hat.</p>
+
+<h2>04 — Character Collider</h2>
+<p>The main environmental collider should be simple and stable. It exists to answer: <strong>where can the gameplay character physically be?</strong></p>
+<p>It should not answer: <strong>what exact shape is the monkey model?</strong></p>
+<ul class="check"><li>Stable while running.</li><li>Stable while turning.</li><li>Predictable near walls.</li><li>Independent from skin geometry.</li><li>Cheap enough for multiplayer.</li><li>Easy to visualize.</li></ul>
+
+<h2>05 — Collider / Hurtbox / Hitbox / Sensor</h2>
+<table><tr><th>Volume</th><th>Meaning</th></tr>
+<tr><td>Collider</td><td>Physical occupancy against world/appropriate bodies.</td></tr>
+<tr><td>Hurtbox</td><td>Where a character can receive a gameplay interaction.</td></tr>
+<tr><td>Hitbox</td><td>Where an active action can apply an interaction.</td></tr>
+<tr><td>Sensor</td><td>Detects nearby objects without causing physical collision.</td></tr>
+</table>
+
+<h2>06 — Hitbox Architecture</h2>
+<pre>Character
+├── BodyHurtbox
+├── OptionalHeadHurtbox
+├── KickHitbox
+├── TackleHitbox
+├── HeaderZone
+├── BallControlZone
+└── BallKickZone</pre>
+<p>Keep the number of physical colliders low. Prefer explicit queries for temporary action volumes when that is cheaper and easier to reason about.</p>
+
+<h2>07 — Action Hitbox Timing</h2>
+<pre>ACTION
+ ↓
+WINDUP
+ ↓
+ACTIVE WINDOW
+ ↓
+RECOVERY</pre>
+<p>Hitboxes should normally exist only during the active window.</p>
+<p>This gives us precise control over:</p>
+<ul><li>When a tackle can hit.</li><li>When a kick can touch the ball.</li><li>When a header can interact.</li><li>When a player is vulnerable.</li></ul>
+
+<h2>08 — Animation Does Not Define Hitboxes</h2>
+<p>An animation may visually swing a long arm, but the gameplay hitbox should be authored deliberately.</p>
+<p>Do not attach a giant collider to every bone simply because the arm moves.</p>
+<div class="rule"><strong>Animation tells us how the action looks. Gameplay data tells us where the action can interact.</strong></div>
+
+<h2>09 — Ball Interaction Zones</h2>
+<p>The monkey's foot does not need to literally touch the ball for a good arcade kick.</p>
+<p>Use forgiving zones around the character:</p>
+<pre>        HEAD / HEADER
+              ○
+         ┌─────────┐
+         │  BODY   │
+         └─────────┘
+       ○           ○
+   BALL ZONE    BALL ZONE
+         \       /
+          \ FOOT/
+           KICK</pre>
+<p>These volumes should be tuned for control and fairness.</p>
+
+<h2>10 — Hitbox Fairness</h2>
+<p>Hitboxes are competitive rules. Treat them as seriously as movement speed.</p>
+<ul><li>They must be visible in debug mode.</li><li>They must be measurable.</li><li>They must not vary accidentally between skins.</li><li>They must not extend far beyond the visual action without a clear design reason.</li><li>They must be consistent across clients.</li></ul>
+
+<h2>11 — Player Impact Resolution</h2>
+<pre>Hitbox overlaps Hurtbox
+ ↓
+Validate target
+ ↓
+Check target immunity/state
+ ↓
+Calculate impact tier
+ ↓
+Create Gameplay Impact
+ ↓
+Target enters response state
+ ↓
+Animation/VFX/SFX/Cam/Haptics</pre>
+<p>The hitbox should not directly teleport or animate the target.</p>
+
+<h2>12 — Impact Tiers</h2>
+<table><tr><th>Tier</th><th>Gameplay</th><th>Visual</th></tr>
+<tr><td>0</td><td>No state change</td><td>Micro contact</td></tr>
+<tr><td>1</td><td>Micro reaction</td><td>Small body response</td></tr>
+<tr><td>2</td><td>Stagger</td><td>Brief loss of balance</td></tr>
+<tr><td>3</td><td>Stumble</td><td>Strong cartoon reaction</td></tr>
+<tr><td>4</td><td>Knockback</td><td>Launch / slide</td></tr>
+<tr><td>5</td><td>Fall</td><td>Full-body collapse</td></tr>
+<tr><td>6</td><td>Ragdoll</td><td>Big comedic failure</td></tr></table>
+
+<h2>13 — Ragdoll Strategy</h2>
+<p>Ragdoll should be a gameplay state, not a random side effect of every collision.</p>
+<pre>Animation
+   ↓
+Impact
+   ↓
+Partial Ragdoll
+   ↓
+Full Ragdoll (optional)
+   ↓
+Recovery
+   ↓
+Locomotion</pre>
+<p>Every ragdoll entry must have a recovery path. Avoid indefinite physical simulation.</p>
+
+<h2>14 — Cartoon Motion</h2>
+<p>The exaggerated monkey proportions are an opportunity to communicate movement visually.</p>
+<ul><li>Lean into acceleration.</li><li>Lean back during braking.</li><li>Stretch during jumps.</li><li>Squash on landing.</li><li>Flail arms during severe impacts.</li><li>Let the head react slightly later than the torso.</li><li>Let the tail exaggerate turns and acceleration.</li></ul>
+
+<h2>15 — Secondary Motion</h2>
+<p>Secondary motion can make the monkey feel alive:</p>
+<ul><li>Tail spring.</li><li>Ears.</li><li>Loose accessories.</li><li>Hands/feet follow-through.</li><li>Head inertia.</li></ul>
+<p>Secondary motion must never feed back into authoritative gameplay collision unless explicitly designed as a gameplay mechanic.</p>
+
+<h2>16 — Squash & Stretch</h2>
+<p>Use controlled deformation or animation to emphasize:</p>
+<pre>JUMP
+ ↓
+Anticipation squash
+ ↓
+Stretch
+ ↓
+Airborne
+ ↓
+Landing squash
+ ↓
+Recovery</pre>
+<p>The deformation is presentation. The gameplay collider remains stable unless the design explicitly requires otherwise.</p>
+
+<h2>17 — Grounding the Mesh</h2>
+<p>Oversized cartoon feet often create visual mismatch with the gameplay root.</p>
+<p>Provide:</p>
+<ul><li>Visual vertical offset.</li><li>Forward/back offset if required.</li><li>Foot IK where useful.</li><li>Animation-specific root compensation.</li></ul>
+<p>Never move the authoritative gameplay root simply to make a foot look planted.</p>
+
+<h2>18 — Skin Architecture</h2>
+<pre>CharacterDefinition
+├── GameplayConfig
+├── VisualPrefab
+├── Animator
+├── Materials
+├── VFX
+└── Audio</pre>
+<p>Cosmetics should not modify:</p>
+<ul><li>Movement speed.</li><li>Collider dimensions.</li><li>Hitbox size.</li><li>Tackle range.</li><li>Ball interaction radius.</li></ul>
+<p>unless explicitly defined as a gameplay variant.</p>
+
+<h2>19 — Character Readability</h2>
+<p>In a chaotic multiplayer match, the player must identify characters primarily by silhouette and color, not texture detail.</p>
+<ul class="check"><li>Strong silhouette.</li><li>Clear team color.</li><li>Readable pose.</li><li>Readable action state.</li><li>Visible opponent/team distinction.</li><li>Impact states visible at match distance.</li></ul>
+
+<h2>20 — Camera Considerations</h2>
+<p>The camera must be tested against the actual monkey proportions. Large heads, arms and tails can create unexpected occlusion.</p>
+<p>Do not solve visibility problems by making the character collider smaller. Solve them with camera framing, animation, LOD or visual treatment.</p>
+
+<h2>21 — LOD & Performance</h2>
+<table><tr><th>Distance</th><th>Behaviour</th></tr>
+<tr><td>Near</td><td>Full animation, IK, facial detail, secondary motion.</td></tr>
+<tr><td>Medium</td><td>Reduced secondary motion and simplified presentation.</td></tr>
+<tr><td>Far</td><td>Low-cost animation and simplified visual state.</td></tr></table>
+<p>Gameplay collision remains authoritative; visual complexity should scale with distance.</p>
+
+<h2>22 — Character Debug Lab</h2>
+<pre>[ SHOW GAMEPLAY ROOT ]
+[ SHOW VISUAL ROOT ]
+[ SHOW BODY COLLIDER ]
+[ SHOW HURTBOXES ]
+[ SHOW HITBOXES ]
+[ SHOW BALL ZONES ]
+[ SHOW SKELETON ]
+[ SHOW CURRENT STATE ]
+[ SHOW IMPACT TIER ]
+[ FREEZE ANIMATION ]</pre>
+<p>Developers must be able to see exactly why a character was or was not hit.</p>
+
+<h2>23 — Automated Tests</h2>
+<ul class="check"><li>Changing a skin never changes gameplay dimensions accidentally.</li><li>Kick hitbox is active only during the configured window.</li><li>Tackle hitbox has a bounded range.</li><li>Ragdoll always recovers.</li><li>Visual mesh never becomes authoritative position.</li><li>Oversized accessories do not create hidden gameplay advantages.</li><li>Hitboxes are identical across network clients for the same state.</li></ul>
+
+<h2>24 — Anti-Patterns</h2>
+<ul class="no"><li>MeshCollider on the full monkey for core player collision.</li><li>One collider per bone for every interaction.</li><li>Letting skin geometry define hitbox size.</li><li>Letting animation events directly apply arbitrary physics.</li><li>Creating hitboxes permanently and hiding them with layers.</li><li>Using visual effects as gameplay detection.</li><li>Allowing cosmetics to alter competitive reach accidentally.</li></ul>
+
+<h2>25 — Senior Developer Decision Rules</h2>
+<div class="rule"><strong>01.</strong> The mesh is not the player.</div>
+<div class="rule"><strong>02.</strong> Fairness beats anatomical accuracy.</div>
+<div class="rule"><strong>03.</strong> Use the fewest gameplay volumes that can express the mechanic.</div>
+<div class="rule"><strong>04.</strong> Hitboxes are gameplay data, not animation side effects.</div>
+<div class="rule"><strong>05.</strong> Every action has explicit windup, active and recovery phases unless there is a reason not to.</div>
+<div class="rule"><strong>06.</strong> Cartoon exaggeration belongs primarily in presentation, not hidden collision advantages.</div>
+<div class="rule"><strong>07.</strong> Ragdoll must be deliberate and recoverable.</div>
+<div class="rule"><strong>08.</strong> If a collision is difficult to explain visually, add debug visualization before changing the code.</div>
+<div class="rule"><strong>09.</strong> Never solve a visual problem by corrupting gameplay geometry.</div>
+<div class="rule"><strong>10.</strong> Character cosmetics are data-driven and isolated from gameplay authority.</div>
+
+<h2>26 — Definition of Done</h2>
+<ul class="check"><li>Every character has a stable gameplay body.</li><li>Hitboxes and hurtboxes are explicit and debug-visible.</li><li>Ball interaction is forgiving but fair.</li><li>Cartoon proportions never accidentally affect competitive gameplay.</li><li>Stumble, knockback, fall and ragdoll have clear state transitions.</li><li>Animation, physics and gameplay remain decoupled.</li><li>Skins can be added without rewriting core systems.</li><li>The monkey remains readable at actual match camera distance.</li><li>The system is performant with the target player count.</li></ul>
+
+<div class="rule"><strong>FINAL PRINCIPLE</strong><br>Make the monkey look physically ridiculous while keeping the rules underneath it ruthlessly disciplined. That contrast is what creates great cartoon gameplay.</div>
+<p class="small">Implementation protocol: inspect current character architecture → identify gameplay authority → define volumes → implement one interaction → visualize it → test edge cases → tune → document.</p>
+</main></body></html>

@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>09 Character Animation Bible — Monkey Movement & Actions</title>
+<style>
+:root{--bg:#f2f3ef;--paper:#fff;--ink:#171b18;--muted:#667067;--line:#d8ddd7;--green:#2f6b40;--soft:#edf3ec;--orange:#a95e21;--red:#9e3d3d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.58}
+main{max-width:1100px;margin:auto;padding:46px 24px 90px}.hero{background:linear-gradient(145deg,#17331f,#315d37);color:white;border-radius:24px;padding:42px;margin-bottom:20px}
+.kicker{font-size:12px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;opacity:.82}
+h1{font-size:44px;line-height:1.04;letter-spacing:-.04em;margin:10px 0 14px}h2{font-size:27px;line-height:1.15;margin:42px 0 14px;padding-top:16px;border-top:1px solid var(--line)}
+h3{font-size:18px;margin:25px 0 7px}.hero p{color:#e9f0e8;font-size:18px;max-width:900px}
+p{color:#333a35}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.card{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:24px}.full{grid-column:1/-1}
+.rule{background:var(--soft);border-left:5px solid var(--green);padding:15px 17px;border-radius:0 12px 12px 0;margin:16px 0;font-weight:700}.warning{border-left-color:var(--orange)}.danger{border-left-color:var(--red)}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:14px 0}.node{background:#eef2ed;border:1px solid #dce4da;padding:9px 12px;border-radius:10px;font-weight:750}.arrow{font-weight:900;color:var(--green)}
+table{width:100%;border-collapse:collapse;margin:13px 0;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+pre{background:#172019;color:#eef5ed;border-radius:14px;padding:18px;overflow:auto;font-size:12px;line-height:1.55}code{background:#eef0ec;padding:2px 5px;border-radius:5px}
+.checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 20px}.check{padding:8px 0;border-bottom:1px dashed var(--line)}
+.pill{display:inline-block;background:#eef2ed;border:1px solid #dce4da;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800;margin:3px}
+.small{font-size:13px;color:var(--muted)}.footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px}
+@media(max-width:720px){.grid,.checklist{grid-template-columns:1fr}.hero{padding:30px 24px}h1{font-size:35px}}
+</style>
+</head>
+<body>
+<main>
+
+<section class="hero">
+<div class="kicker">Character Animation · Gameplay Presentation · KB 09</div>
+<h1>Monkey Movement & Animation Bible</h1>
+<p><strong>Obiettivo:</strong> far sentire il personaggio come una vera scimmia giocosa dentro un gioco di calcio cartoon: movimento elastico, esagerato e pieno di fisicità, ma sempre leggibile e controllato dal gameplay.</p>
+<p>La regola fondamentale è la stessa delle Bible precedenti: <strong>il gameplay decide cosa succede; l'animazione decide come lo vediamo.</strong></p>
+</section>
+
+<div class="grid">
+
+<section class="card full">
+<h2>01 — Animation Philosophy</h2>
+<div class="rule">Il personaggio non deve correre come un umano con una skin da scimmia. Deve avere una <strong>locomotion language propria da scimmia</strong>.</div>
+<div class="flow">
+<div class="node">Weight</div><div class="arrow">+</div>
+<div class="node">Elasticity</div><div class="arrow">+</div>
+<div class="node">Playfulness</div><div class="arrow">+</div>
+<div class="node">Physical Comedy</div><div class="arrow">=</div>
+<div class="node">Monkey Feel</div>
+</div>
+<p>La fisica e l'animazione devono creare l'impressione di un corpo morbido e giocoso, senza trasformare il controllo in un ragdoll imprevedibile.</p>
+</section>
+
+<section class="card">
+<h2>02 — Principio architetturale</h2>
+<p>I documenti esistenti stabiliscono una separazione netta tra Gameplay Root e Visual Root: il mesh non è l'autorità sul player e l'animazione non deve modificare arbitrariamente la fisica. fileciteturn2file0L15-L48</p>
+<pre>Gameplay Root
+├── Controller
+├── Movement Motor
+├── State Machine
+└── Collision State
+
+Visual Root
+├── Monkey Mesh
+├── Skeleton
+├── Animator
+├── Facial Rig
+├── VFX
+└── Secondary Motion</pre>
+</section>
+
+<section class="card">
+<h2>03 — Animation State Priority</h2>
+<p>Il sistema segue la gerarchia già definita: locomotion → action → impact → knockback/ragdoll → recovery. fileciteturn2file3L185-L200</p>
+<pre>NORMAL LOCOMOTION
+        ↓
+ACTION
+        ↓
+IMPACT
+        ↓
+KNOCKBACK / RAGDOLL
+        ↓
+RECOVERY</pre>
+<p>Le transizioni devono essere esplicite. Niente decine di booleani nascosti.</p>
+</section>
+
+<section class="card full">
+<h2>04 — Monkey Locomotion</h2>
+<p>La locomotion deve comunicare <strong>gioco, agilità e instabilità controllata</strong>. Non vogliamo una corsa umanoide perfettamente simmetrica.</p>
+<table>
+<tr><th>State</th><th>Animation language</th><th>Gameplay</th></tr>
+<tr><td>Idle</td><td>Peso morbido, micro-sway, testa/mani/pancia con secondary motion.</td><td>Full control.</td></tr>
+<tr><td>Walk</td><td>Passo leggermente goffo, braccia più libere, piccolo bounce.</td><td>Normal movement.</td></tr>
+<tr><td>Run</td><td>Baricentro basso, braccia più attive, falcata cartoon.</td><td>High mobility.</td></tr>
+<tr><td>Sprint</td><td>Corpo inclinato, braccia aperte/indietro, grande follow-through.</td><td>Maximum movement.</td></tr>
+<tr><td>Start</td><td>Piccolo caricamento all'indietro + spinta esplosiva.</td><td>Acceleration.</td></tr>
+<tr><td>Stop</td><td>Compressione del corpo + passo di recupero.</td><td>Deceleration.</td></tr>
+<tr><td>Turn</td><td>Spalle e bacino anticipano; piedi recuperano dopo.</td><td>Direction change.</td></tr>
+<tr><td>Backpedal</td><td>Più goffo e leggibile, senza trasformarlo in corsa umana al contrario.</td><td>Backward movement.</td></tr>
+</table>
+<div class="rule">La sensazione deve essere: <strong>“un pupazzo-scimmia che corre perché è divertentissimo correre”</strong>, non “un atleta umano con proporzioni strane”.</div>
+</section>
+
+<section class="card">
+<h2>05 — Start / Stop</h2>
+<h3>Start</h3>
+<p>Usare anticipazione breve: il corpo si comprime, poi esplode nella direzione di movimento.</p>
+<h3>Stop</h3>
+<p>Non congelare la posa. Usare una micro-compressione, un passo di recupero e un piccolo overshoot del torso.</p>
+<div class="rule">Gameplay velocity resta autorevole; l'animazione può enfatizzare l'accelerazione senza falsificarla.</div>
+</section>
+
+<section class="card">
+<h2>06 — Turning</h2>
+<p>La scimmia deve “girare con il corpo”, non ruotare come un cilindro.</p>
+<ul>
+<li>Testa anticipa leggermente.</li>
+<li>Spalle iniziano la rotazione.</li>
+<li>Bacino segue.</li>
+<li>Piedi completano la curva.</li>
+<li>Braccia e accessori hanno follow-through.</li>
+</ul>
+<p>Per cambi molto rapidi si può usare una breve animazione di plant/pivot.</p>
+</section>
+
+<section class="card full">
+<h2>07 — Secondary Motion</h2>
+<p>Il Character Bible definisce un corpo morbido e toy-like; il movimento deve sfruttarlo senza cambiare il gameplay body. La separazione Visual Root / Gameplay Root permette questa libertà. fileciteturn2file0L24-L40</p>
+<table>
+<tr><th>Elemento</th><th>Secondary motion</th></tr>
+<tr><td>Testa</td><td>Piccolo ritardo rispetto al torso; accentuato durante stop/turn.</td></tr>
+<tr><td>Pancia</td><td>Compressione e rimbalzo molto leggero.</td></tr>
+<tr><td>Braccia</td><td>Follow-through più evidente durante sprint e turn.</td></tr>
+<tr><td>Orecchie</td><td>Piccolo lag e ritorno elastico.</td></tr>
+<tr><td>Coda</td><td>Trailing motion, se presente.</td></tr>
+<tr><td>Accessori</td><td>Secondary motion visivo, mai gameplay.</td></tr>
+</table>
+<div class="rule warning">Secondary motion deve essere controllato e scalabile: near camera = completo; medium = ridotto; far = minimo. La documentazione esistente prevede già LOD visuale per questa distinzione. fileciteturn2file6L488-L493</div>
+</section>
+
+<section class="card full">
+<h2>08 — Grab System: presa di un altro player</h2>
+<p>Il grab è una nuova action gameplay. Non deve essere una semplice collisione tra due corpi: il sistema esistente raccomanda hitbox/query espliciti per le interazioni. fileciteturn2file5L404-L428</p>
+<pre>GRAB INPUT
+    ↓
+CAN ACTION?
+    ↓
+GRAB WINDUP
+    ↓
+GRAB HITBOX / QUERY
+    ↓
+FIND VALID PLAYER
+    ↓
+RESOLVE TARGET
+    ↓
+ATTACH / HOLD STATE
+    ↓
+HOLD / STRUGGLE
+    ↓
+RELEASE / THROW / INTERRUPT
+    ↓
+RECOVERY</pre>
+<h3>Visual language</h3>
+<ul>
+<li>La scimmia allunga entrambe le braccia in modo esagerato.</li>
+<li>Piccolo lean in avanti.</li>
+<li>Mani molto leggibili durante la presa.</li>
+<li>Il target viene “afferrato” visivamente con una posa comica.</li>
+<li>Il corpo del grabber reagisce al peso del target.</li>
+</ul>
+<div class="rule">La presa visiva può essere molto più spettacolare della gameplay geometry. La hitbox rimane una zona controllata e temporanea.</div>
+</section>
+
+<section class="card">
+<h2>09 — Grab States</h2>
+<table>
+<tr><th>State</th><th>Meaning</th></tr>
+<tr><td>GrabWindup</td><td>Braccia preparano la presa.</td></tr>
+<tr><td>GrabActive</td><td>Finestra in cui il target può essere catturato.</td></tr>
+<tr><td>Holding</td><td>Target catturato; entrambi entrano in una relazione gameplay esplicita.</td></tr>
+<tr><td>Struggle</td><td>Eventuale finestra di input/escape.</td></tr>
+<tr><td>Throw</td><td>Rilascio con impulso authored.</td></tr>
+<tr><td>GrabBreak</td><td>Interruzione per hit, limite o altro evento.</td></tr>
+</table>
+</section>
+
+<section class="card">
+<h2>10 — Grab Animation Pairing</h2>
+<p>Il grab richiede una coppia di animazioni coerenti:</p>
+<div class="flow"><div class="node">Grabber</div><div class="arrow">↔</div><div class="node">Victim</div></div>
+<p>Il target deve avere una posa di <strong>Grabbed / Held</strong> sincronizzata, così le mani non sembrano attraversare il corpo.</p>
+<div class="rule">Il gameplay decide chi è grabbed. L'Animator decide come i due corpi comunicano visivamente la relazione.</div>
+</section>
+
+<section class="card full">
+<h2>11 — Grab → Throw / Release</h2>
+<p>Per il feeling cartoon, il rilascio deve avere un forte contrasto tra caricamento e risultato.</p>
+<pre>HOLD
+ ↓
+BODY COMPRESS
+ ↓
+RELEASE
+ ↓
+TARGET LAUNCH
+ ↓
+AIRBORNE / STAGGER / RAGDOLL
+ ↓
+RECOVERY</pre>
+<p>L'impulso al target deve essere gameplay-authored. La posa può enfatizzare il lancio con un grande follow-through delle braccia e del torso.</p>
+</section>
+
+<section class="card full">
+<h2>12 — Kick Animation</h2>
+<p>Il calcio segue la pipeline già definita per le action: input → intent → can action → windup → active → resolution → recovery. fileciteturn2file3L202-L219</p>
+<pre>KICK
+ ↓
+READINESS
+ ↓
+WINDUP
+ ↓
+PLANT FOOT
+ ↓
+SWING
+ ↓
+CONTACT
+ ↓
+FOLLOW-THROUGH
+ ↓
+RECOVERY</pre>
+<table>
+<tr><th>Phase</th><th>Animation</th><th>Gameplay</th></tr>
+<tr><td>Windup</td><td>Gamba si prepara, torso ruota.</td><td>Pre-contact.</td></tr>
+<tr><td>Plant</td><td>Piede di supporto stabile.</td><td>Contact reference.</td></tr>
+<tr><td>Active</td><td>Gamba attraversa la zona palla.</td><td>Kick hitbox / ball interaction.</td></tr>
+<tr><td>Follow-through</td><td>Gamba e torso completano il movimento.</td><td>Ball already authoritative.</td></tr>
+<tr><td>Recovery</td><td>Ritorno alla locomotion.</td><td>Action ends.</td></tr>
+</table>
+<div class="rule warning">L'animazione non deve decidere quando il pallone viene colpito. La finestra gameplay/hitbox è la fonte di verità; animation events sono presentation helpers. Le hitbox devono essere attive solo nella finestra configurata. fileciteturn2file6L559-L573</div>
+</section>
+
+<section class="card">
+<h2>13 — Kick Variants</h2>
+<span class="pill">Normal Kick</span><span class="pill">Power Shot</span><span class="pill">Pass</span><span class="pill">Quick Touch</span><span class="pill">Air Kick</span>
+<p>Le varianti devono condividere la stessa grammatica: caricamento → contatto → follow-through. Cambiano ampiezza, velocità e intenzione.</p>
+</section>
+
+<section class="card">
+<h2>14 — Header</h2>
+<p>Per il colpo di testa:</p>
+<ul>
+<li>Piccolo crouch / caricamento.</li>
+<li>Salto o estensione del corpo.</li>
+<li>Testa e torso guidano il contatto.</li>
+<li>Follow-through breve.</li>
+<li>Atterraggio morbido.</li>
+</ul>
+<p>La HeaderZone resta una gameplay volume esplicita, come già previsto nell'architettura dei character hitbox. fileciteturn2file7L548-L569</p>
+</section>
+
+<section class="card full">
+<h2>15 — Tackle</h2>
+<p>Il tackle deve essere <strong>fisico e comico</strong>, ma non incontrollabile.</p>
+<pre>TACKLE
+ ↓
+PREP
+ ↓
+LUNGE
+ ↓
+ACTIVE HITBOX
+ ↓
+CONTACT
+ ├── MISS → SLIDE / RECOVERY
+ ├── BALL → DEFLECTION / STEAL
+ └── PLAYER → IMPACT
+ ↓
+RECOVERY</pre>
+<p>La fisica precedente stabilisce che gli impatti devono essere authored e che il tackle non dovrebbe dipendere da due rigidbody che si scontrano casualmente. fileciteturn2file1L127-L137</p>
+</section>
+
+<section class="card">
+<h2>16 — Tackle Animation</h2>
+<ul>
+<li>Grande anticipazione.</li>
+<li>Corpo basso e proiettato in avanti.</li>
+<li>Braccia e gambe esagerate.</li>
+<li>Piccolo slide finale se manca il bersaglio.</li>
+<li>Se colpisce: reazione leggibile.</li>
+</ul>
+<div class="rule">Il miss deve essere divertente, non un errore frustrante: la perdita di controllo è breve e recuperabile.</div>
+</section>
+
+<section class="card">
+<h2>17 — Impact Reactions</h2>
+<p>Le reazioni devono distinguere intensità diverse.</p>
+<table>
+<tr><th>Impact</th><th>Visual</th></tr>
+<tr><td>Soft</td><td>Head bob + piccolo step.</td></tr>
+<tr><td>Medium</td><td>Torso twist + stumble.</td></tr>
+<tr><td>Hard</td><td>Knockback + grande squash/stretch.</td></tr>
+<tr><td>Extreme</td><td>Ragdoll authored.</td></tr>
+</table>
+<p>Il sistema esistente richiede che stumble, knockback, fall e ragdoll abbiano transizioni chiare e che il ragdoll sia deliberato e recuperabile. fileciteturn2file2L157-L170</p>
+</section>
+
+<section class="card full">
+<h2>18 — Ragdoll: cartoon, non caos</h2>
+<p>Il ragdoll è una <strong>presentation state controllata dal gameplay</strong>, non la risposta automatica a ogni collisione.</p>
+<pre>IMPACT EVENT
+    ↓
+IMPACT TIER
+    ↓
+IS RAGDOLL REQUIRED?
+    ↓ YES
+ENTER RAGDOLL
+    ↓
+LIMIT DURATION
+    ↓
+RECOVERY POSE
+    ↓
+LOCOMOTION</pre>
+<p>Durante il ragdoll possiamo enfatizzare fisicamente braccia, gambe e testa, ma il player deve sempre poter recuperare in modo deterministico.</p>
+</section>
+
+<section class="card full">
+<h2>19 — Animation ↔ Gameplay Contract</h2>
+<table>
+<tr><th>Gameplay owns</th><th>Animation owns</th></tr>
+<tr><td>Position / velocity</td><td>Pose</td></tr>
+<tr><td>State</td><td>Timing presentation</td></tr>
+<tr><td>Hitbox</td><td>Visual swing</td></tr>
+<tr><td>Grab success</td><td>Grab pose</td></tr>
+<tr><td>Kick contact</td><td>Kick contact visual</td></tr>
+<tr><td>Knockback</td><td>Reaction exaggeration</td></tr>
+<tr><td>Ragdoll trigger</td><td>Ragdoll presentation</td></tr>
+</table>
+<div class="rule danger">Never let animation events directly apply arbitrary physics or become the source of truth for hit detection. This is explicitly prohibited by the existing architecture. fileciteturn2file2L154-L167</div>
+</section>
+
+<section class="card">
+<h2>20 — Animation Events</h2>
+<p>Use semantic events as communication points:</p>
+<pre>KickStarted
+KickContactWindow
+KickResolved
+GrabStarted
+GrabConnected
+GrabReleased
+TackleStarted
+TackleContact
+ImpactReceived
+RagdollStarted
+RecoveryStarted</pre>
+<p>These can trigger presentation without creating circular dependencies.</p>
+</section>
+
+<section class="card">
+<h2>21 — Input Buffer & Cancel</h2>
+<p>Short buffering is desirable for responsiveness; the existing Action Bible explicitly supports small configurable buffers. fileciteturn2file3L221-L229</p>
+<ul>
+<li>Kick near recovery.</li>
+<li>Tackle after sprint.</li>
+<li>Jump near landing.</li>
+<li>Grab immediately after a turn.</li>
+</ul>
+<p>Cancellation must be authored per action, never arbitrary. fileciteturn2file3L221-L233</p>
+</section>
+
+<section class="card full">
+<h2>22 — Animation LOD</h2>
+<table>
+<tr><th>Distance</th><th>Animation</th></tr>
+<tr><td>Near</td><td>Full body animation + secondary motion + facial detail + grab pair refinement.</td></tr>
+<tr><td>Medium</td><td>Reduced secondary motion; preserve silhouette and action readability.</td></tr>
+<tr><td>Far</td><td>Cheap locomotion and simplified reactions.</td></tr>
+</table>
+<p>Gameplay hitboxes remain unchanged by LOD. Only presentation complexity scales. fileciteturn2file6L488-L493</p>
+</section>
+
+<section class="card">
+<h2>23 — Readability Rules</h2>
+<div class="checklist">
+<div class="check">□ Sprint leggibile</div>
+<div class="check">□ Kick leggibile</div>
+<div class="check">□ Grab leggibile</div>
+<div class="check">□ Player grabbed riconoscibile</div>
+<div class="check">□ Tackle leggibile</div>
+<div class="check">□ Hit reaction leggibile</div>
+<div class="check">□ Ragdoll leggibile</div>
+<div class="check">□ Recovery leggibile</div>
+</div>
+<p>In multiplayer la leggibilità deve funzionare soprattutto attraverso silhouette, colore, posa e stato, non texture dettagliate. fileciteturn2file6L480-L486</p>
+</section>
+
+<section class="card">
+<h2>24 — Animation Test Lab</h2>
+<pre>[ IDLE ]
+[ WALK ]
+[ RUN ]
+[ SPRINT ]
+[ START / STOP ]
+[ TURN ]
+[ KICK ]
+[ PASS ]
+[ HEADER ]
+[ TACKLE ]
+[ GRAB ]
+[ HOLD ]
+[ THROW ]
+[ HIT REACTION ]
+[ KNOCKBACK ]
+[ RAGDOLL ]
+[ RECOVERY ]
+[ CELEBRATION ]</pre>
+</section>
+
+<section class="card full">
+<h2>25 — Definition of Done</h2>
+<div class="checklist">
+<div class="check">□ Movement feels unmistakably monkey-like.</div>
+<div class="check">□ Start/stop/turn have playful weight.</div>
+<div class="check">□ Secondary motion never changes gameplay authority.</div>
+<div class="check">□ Kick has clear windup/active/recovery.</div>
+<div class="check">□ Grab has explicit gameplay windows.</div>
+<div class="check">□ Grabber and victim animations pair correctly.</div>
+<div class="check">□ Throw/release is visually exaggerated but gameplay-controlled.</div>
+<div class="check">□ Tackle feels physical but remains readable.</div>
+<div class="check">□ Ragdoll is deliberate and recoverable.</div>
+<div class="check">□ Animation LOD preserves gameplay readability.</div>
+<div class="check">□ All actions respect state priority.</div>
+<div class="check">□ Animation never becomes gameplay authority.</div>
+</div>
+</section>
+
+<section class="card full">
+<h2>26 — Final Character Movement Principle</h2>
+<p style="font-size:22px"><strong>Make the monkey look like it has more personality than physics — while the physics underneath remain disciplined.</strong></p>
+<p>The ideal result is a character that can sprint, stumble, grab another monkey, kick a ball, get tackled and ragdoll in ways that are visually ridiculous, immediately readable and still predictable enough to support competitive gameplay.</p>
+<div class="rule">PLAYFUL BODY · CLEAR INTENT · CONTROLLED PHYSICS · EXAGGERATED PRESENTATION</div>
+</section>
+
+</div>
+<div class="footer">Character Animation Bible · Monkey Movement & Actions · KB 09 · V1.0</div>
+</main>
+</body>
+</html>
