@@ -1,10 +1,31 @@
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
+using UnityEditor.Callbacks;
+using UnityEditor.iOS.Xcode;
 using UnityEngine;
 
 namespace CalcioStumble
 {
+    // Runs automatically after every iOS build. Declares that the app uses no non-exempt
+    // encryption (ITSAppUsesNonExemptEncryption = false) so App Store Connect SKIPS the manual
+    // "Export Compliance / encryption" question and the build goes straight to TestFlight.
+    public static class IOSPostProcess
+    {
+        [PostProcessBuild(999)]
+        public static void OnPostprocessBuild(BuildTarget target, string pathToBuiltProject)
+        {
+            if (target != BuildTarget.iOS) return;
+            string plistPath = Path.Combine(pathToBuiltProject, "Info.plist");
+            var plist = new PlistDocument();
+            plist.ReadFromFile(plistPath);
+            plist.root.SetBoolean("ITSAppUsesNonExemptEncryption", false);
+            plist.WriteToFile(plistPath);
+            Debug.Log("CMDBUILD ITSAppUsesNonExemptEncryption=false written to Info.plist");
+        }
+    }
+
     // Command-line build entry point so the iOS Xcode project can be regenerated headlessly
     // (batchmode) without the Editor GUI being open. Invoke with:
     //   Unity -quit -batchmode -projectPath <proj> -executeMethod CalcioStumble.CmdBuild.IOS -logFile -
