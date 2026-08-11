@@ -43,7 +43,8 @@ namespace CalcioStumble
             PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.iOS, BundleId);
             PlayerSettings.iOS.appleDeveloperTeamID = TeamId;
             PlayerSettings.iOS.appleEnableAutomaticSigning = true; // manage in Xcode/xcodebuild at archive time
-            SetupIcon();
+            // App icon is provided by the Apple Icon Composer .icon bundle (Assets/AppIcon/KongBall.icon)
+            // via IOSIconComposerIcon post-processor. The legacy PNG SetupIcon() is intentionally skipped.
             AssetDatabase.SaveAssets();
             Debug.LogFormat("CMDBUILD config bundle={0} team={1}", BundleId, TeamId);
             IOS();
