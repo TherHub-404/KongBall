@@ -60,22 +60,28 @@ jobs:
           done
           ls -la "/Applications/Unity/Hub/Editor/${UNITY_VERSION}/Unity.app/Contents/MacOS/" || (echo "Unity install failed" && exit 1)
 
-      - name: Build iOS Xcode project (Unity batchmode)
+      # Unity killed MANUAL (.ulf) activation for Personal licenses. Personal is now activated
+      # headlessly with the Unity ACCOUNT credentials (email + password, no serial). If the Unity
+      # account has 2FA enabled, headless activation cannot pass it -> disable 2FA on the Unity
+      # account used for CI, or switch to a Pro serial.
+      - name: Build iOS Xcode project (activate Personal + build)
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         run: |
           UNITY="/Applications/Unity/Hub/Editor/${UNITY_VERSION}/Unity.app/Contents/MacOS/Unity"
+          # Activate a free Personal license via credentials (no serial).
+          "$UNITY" -batchmode -quit -nographics \
+            -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" -logFile - || true
+          # Build the Xcode project.
           "$UNITY" -quit -batchmode -nographics \
-            -serial "$UNITY_SERIAL" -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" \
             -projectPath "$GITHUB_WORKSPACE" \
             -executeMethod CalcioStumble.CmdBuild.IOSConfigured \
             -logFile - || BUILD_RC=$?
-          # Always return the license seat so it is not consumed
-          "$UNITY" -quit -batchmode -nographics -returnlicense \
-            -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" || true
-          if [ -n "$BUILD_RC" ] && [ "$BUILD_RC" != "0" ]; then exit $BUILD_RC; fi
+          # Free the license activation for this machine (Personal seats are limited).
+          "$UNITY" -batchmode -quit -nographics -returnlicense \
+            -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" -logFile - || true
+          if [ -n "$BUILD_RC" ] && [ "$BUILD_RC" != "0" ]; then exit "$BUILD_RC"; fi
           test -d "$GITHUB_WORKSPACE/Builds/iOS/Unity-iPhone.xcodeproj" || (echo "Xcode project not generated" && exit 1)
 
       - name: Install signing certificate into a temp keychain
