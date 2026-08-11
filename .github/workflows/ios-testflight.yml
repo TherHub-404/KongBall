@@ -1,0 +1,147 @@
+name: iOS TestFlight
+
+# Push to main  ->  install Unity, build the iOS Xcode project, sign, upload to TestFlight.
+# NOTE: Unity on GitHub-hosted macOS runners installs the editor every run (cached) and needs a
+# Unity license (Pro serial recommended for CI). This is the "cloud" path deliberately chosen;
+# expect ~30-40 min per run and GitHub Actions minutes cost (macOS = 10x multiplier).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+env:
+  UNITY_VERSION: "6000.5.7f1"
+  UNITY_CHANGESET: "017862109af0"
+  BUNDLE_ID: "com.kong.kongball"
+  TEAM_ID: "9Z8F9Q282X"
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Unity editor install
+        id: cache-unity
+        uses: actions/cache@v4
+        with:
+          path: /Applications/Unity/Hub/Editor
+          key: unity-${{ env.UNITY_VERSION }}-ios
+
+      - name: Cache Library (import speed)
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: unity-library-${{ hashFiles('Assets/**','Packages/**','ProjectSettings/**') }}
+          restore-keys: unity-library-
+
+      - name: Install Unity Hub
+        run: |
+          brew install --cask unity-hub
+
+      - name: Install Unity ${{ env.UNITY_VERSION }} (+ iOS module)
+        if: steps.cache-unity.outputs.cache-hit != 'true'
+        run: |
+          HUB="/Applications/Unity Hub.app/Contents/MacOS/Unity Hub"
+          "$HUB" -- --headless install \
+            --version "${UNITY_VERSION}" --changeset "${UNITY_CHANGESET}" \
+            --module ios --childModules || true
+          # Wait until the editor binary exists (Hub install returns before finishing)
+          for i in $(seq 1 60); do
+            [ -x "/Applications/Unity/Hub/Editor/${UNITY_VERSION}/Unity.app/Contents/MacOS/Unity" ] && break
+            sleep 15
+          done
+          ls -la "/Applications/Unity/Hub/Editor/${UNITY_VERSION}/Unity.app/Contents/MacOS/" || (echo "Unity install failed" && exit 1)
+
+      - name: Build iOS Xcode project (Unity batchmode)
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        run: |
+          UNITY="/Applications/Unity/Hub/Editor/${UNITY_VERSION}/Unity.app/Contents/MacOS/Unity"
+          "$UNITY" -quit -batchmode -nographics \
+            -serial "$UNITY_SERIAL" -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" \
+            -projectPath "$GITHUB_WORKSPACE" \
+            -executeMethod CalcioStumble.CmdBuild.IOSConfigured \
+            -logFile - || BUILD_RC=$?
+          # Always return the license seat so it is not consumed
+          "$UNITY" -quit -batchmode -nographics -returnlicense \
+            -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" || true
+          if [ -n "$BUILD_RC" ] && [ "$BUILD_RC" != "0" ]; then exit $BUILD_RC; fi
+          test -d "$GITHUB_WORKSPACE/Builds/iOS/Unity-iPhone.xcodeproj" || (echo "Xcode project not generated" && exit 1)
+
+      - name: Install signing certificate into a temp keychain
+        env:
+          DIST_CERT_BASE64: ${{ secrets.DIST_CERT_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/app-signing.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/dist.p12"
+          echo "$DIST_CERT_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT_PATH" -k "$KEYCHAIN" -P "$DIST_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/xcodebuild
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Make the temp keychain visible to xcodebuild
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          echo "$ASC_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Archive + export + upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cd "$GITHUB_WORKSPACE/Builds/iOS"
+          ARCH="$RUNNER_TEMP/KONGBALL.xcarchive"
+          P8="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><true/>
+          </dict></plist>
+          PLIST
+
+          xcodebuild -project Unity-iPhone.xcodeproj -scheme Unity-iPhone \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath "$ARCH" -allowProvisioningUpdates \
+            -authenticationKeyPath "$P8" -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="${TEAM_ID}" archive
+
+          xcodebuild -exportArchive -archivePath "$ARCH" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$P8" -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            -exportPath "$RUNNER_TEMP/export"
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
