@@ -121,7 +121,9 @@ namespace CalcioStumble
             if (!HasStateAuthority) return;
             Owner = p;
             _dribbleVel = Vector3.zero;
-            StealLock = TickTimer.CreateFromSeconds(Runner, 0.35f);
+            // Protect the new owner briefly so possession doesn't thrash between two close players
+            // (the owner's dribble-lead moves the ball ahead, separating them within this window).
+            StealLock = TickTimer.CreateFromSeconds(Runner, 0.5f);
         }
 
         // Called by the owning player's client (owner == authority) to shoot. No RPC needed.

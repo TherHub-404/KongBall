@@ -411,17 +411,19 @@ namespace CalcioStumble
             if (_grabTarget != null) { _grabTarget.RPC_Release(); _grabTarget = null; }
         }
 
-        // Per-client: the ball ignores MY collider only while I own it (so my dribble/back-kick
-        // don't hit my own body) plus a short grace after I kick. Runs on my own client so it
-        // self-corrects when authority changes (fixes the "pass through the ball forever" bug).
+        // The ball ignores EVERY player's body (not just the owner's). Reason: on a non-owner's
+        // client the ball is a kinematic NetworkTransform proxy, so a colliding CharacterController
+        // gets blocked by it (the ball acts like a little wall) or bumps it — which stopped the
+        // approaching player from ever reaching claim range ("only one player can attach" bug).
+        // Possession is now purely proximity-based (claim); defense is via push/grab/steal, not
+        // body-blocking. Owner dribble/back-kick already needed this ignore anyway.
         void UpdateBallIgnore()
         {
             if (_ball == null) _ball = UnityEngine.Object.FindAnyObjectByType<NetBall>();
             if (_ball == null || _cc == null) return;
             if (_ballCol == null) _ballCol = _ball.GetComponent<Collider>();
             if (_ballCol == null) return;
-            bool ignore = (_ball.Owner == Object.InputAuthority) || (Time.time < _kickIgnoreUntil);
-            if (ignore != _ballIgnored) { Physics.IgnoreCollision(_ballCol, _cc, ignore); _ballIgnored = ignore; }
+            if (!_ballIgnored) { Physics.IgnoreCollision(_ballCol, _cc, true); _ballIgnored = true; }
         }
 
         // Teleport back to the team's kickoff spot (called on a new kickoff).
