@@ -81,14 +81,12 @@ namespace KongBall
             Debug.Log("[Net] Spawned local player team=" + _chosenTeam + " at " + pos);
 
             // The Shared-Mode master spawns the single shared ball (once).
-            if (runner.IsSharedModeMasterClient && ballPrefab != null
-                && UnityEngine.Object.FindAnyObjectByType<NetBall>() == null)
+            if (runner.IsSharedModeMasterClient && ballPrefab != null && NetBall.Instance == null)
             {
                 runner.Spawn(ballPrefab, new Vector3(0f, 0.5f, 0f), Quaternion.identity);
                 Debug.Log("[Net] Master spawned ball");
             }
-            if (runner.IsSharedModeMasterClient && matchPrefab != null
-                && UnityEngine.Object.FindFirstObjectByType<MatchController>() == null)
+            if (runner.IsSharedModeMasterClient && matchPrefab != null && MatchController.Instance == null)
             {
                 runner.Spawn(matchPrefab, Vector3.zero, Quaternion.identity);
                 Debug.Log("[Net] Master spawned MatchController");

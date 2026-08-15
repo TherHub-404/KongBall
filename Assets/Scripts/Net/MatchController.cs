@@ -33,8 +33,6 @@ namespace KongBall
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
         public void RPC_Goal(int team) { RegisterGoal(team); }
 
-        NetBall _ball;
-
         public override void Spawned()
         {
             Instance = this;
@@ -44,6 +42,11 @@ namespace KongBall
                 MatchTime = matchDuration;
                 StartCountdown();
             }
+        }
+
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            if (Instance == this) Instance = null;
         }
 
         void StartCountdown()
@@ -86,8 +89,7 @@ namespace KongBall
             if ((Phase)PhaseId != Phase.Playing) return; // goal lock outside PLAYING
             if (scoringTeam == 0) ScoreBlue++; else ScoreRed++;
 
-            if (_ball == null) _ball = UnityEngine.Object.FindFirstObjectByType<NetBall>();
-            if (_ball != null) _ball.KickoffReset(); // stop the ball re-triggering
+            if (NetBall.Instance != null) NetBall.Instance.KickoffReset(); // stop the ball re-triggering
 
             if (!endless && (ScoreBlue >= scoreLimit || ScoreRed >= scoreLimit)) { Finish(); return; }
             PhaseId = (int)Phase.GoalPause;
@@ -96,8 +98,7 @@ namespace KongBall
 
         void Kickoff()
         {
-            if (_ball == null) _ball = UnityEngine.Object.FindFirstObjectByType<NetBall>();
-            if (_ball != null) _ball.KickoffReset();
+            if (NetBall.Instance != null) NetBall.Instance.KickoffReset();
             StartCountdown();
         }
 

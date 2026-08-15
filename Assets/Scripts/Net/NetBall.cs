@@ -32,6 +32,9 @@ namespace KongBall
         [Networked] public PlayerRef Owner { get; set; }
         [Networked] TickTimer StealLock { get; set; }   // brief lock after a possession change
 
+        // Single shared ball per session — resolved once instead of searched every frame.
+        public static NetBall Instance { get; private set; }
+
         Rigidbody _rb;
         Vector3 _dribbleVel;
         Collider _ballCol;
@@ -40,6 +43,7 @@ namespace KongBall
 
         public override void Spawned()
         {
+            Instance = this;
             _rb = GetComponent<Rigidbody>();
 
             _ballCol = GetComponent<Collider>();
@@ -55,6 +59,11 @@ namespace KongBall
                 };
             }
             SyncKinematic();
+        }
+
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            if (Instance == this) Instance = null;
         }
 
         // Only the state authority runs the Rigidbody; others follow NetworkTransform.
@@ -177,14 +186,14 @@ namespace KongBall
             transform.position = _rb.position;
         }
 
-        Transform GetPlayerTransform(PlayerRef p) { var pl = GetPlayer(p); return pl != null ? pl.transform : null; }
-
+        // Every client registers its own player object via Runner.SetPlayerObject at spawn
+        // (NetLauncher) and that association replicates, so any peer can resolve any player
+        // directly — no scene-wide search inside the simulation loop.
         NetPlayer GetPlayer(PlayerRef p)
         {
-            var players = UnityEngine.Object.FindObjectsByType<NetPlayer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-            foreach (var pl in players)
-                if (pl.Object.InputAuthority == p) return pl;
-            return null;
+            if (p == PlayerRef.None || Runner == null) return null;
+            if (!Runner.TryGetPlayerObject(p, out var no) || no == null) return null;
+            return no.GetComponent<NetPlayer>();
         }
 
         static float FlatDist(Vector3 a, Vector3 b) { a.y = 0f; b.y = 0f; return Vector3.Distance(a, b); }
