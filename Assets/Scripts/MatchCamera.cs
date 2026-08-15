@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Orbit camera: follows the player's POSITION but its yaw/pitch are controlled by the
     // player's screen drag (VirtualLookArea) — NOT auto-slaved to the player's facing.
@@ -24,7 +24,7 @@ namespace CalcioStumble
         Transform _target;
         float _yaw, _pitch;          // target orbit angles (driven by drag)
         float _curYaw, _curPitch;    // smoothed angles actually applied
-        LocalInputSource _fallbackInput; // used in the networked scene (no GameManager)
+        LocalInputSource _input;     // the single local input source in the scene
 
         public void SetTarget(Transform player, Vector3 attackDir)
         {
@@ -40,15 +40,10 @@ namespace CalcioStumble
         {
             if (_target == null) return;
 
-            var li = GameManager.Instance != null ? GameManager.Instance.localInput : null;
-            if (li == null)
+            if (_input == null) _input = UnityEngine.Object.FindAnyObjectByType<LocalInputSource>();
+            if (_input != null)
             {
-                if (_fallbackInput == null) _fallbackInput = UnityEngine.Object.FindAnyObjectByType<LocalInputSource>();
-                li = _fallbackInput;
-            }
-            if (li != null)
-            {
-                Vector2 look = li.ConsumeLookDelta();
+                Vector2 look = _input.ConsumeLookDelta();
                 _yaw += look.x * yawSensitivity;
                 _pitch = Mathf.Clamp(_pitch - look.y * pitchSensitivity, pitchMin, pitchMax);
             }

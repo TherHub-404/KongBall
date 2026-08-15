@@ -1,7 +1,7 @@
 using Fusion;
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Networked ball — AUTHORITY FOLLOWS THE POSSESSOR (Shared Mode best practice).
     // Whoever holds the ball requests StateAuthority and simulates it LOCALLY (dribble/kick),

@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // On-screen action button. Reports HELD state (tap/hold) AND a drag delta from the press
     // origin (used to aim the kick when the player owns the ball).

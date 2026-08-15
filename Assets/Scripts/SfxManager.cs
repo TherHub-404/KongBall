@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Minimal juice: procedurally-generated SFX (no external audio assets needed).
     // Clips are built at runtime, so there are no serialized-asset persistence issues.

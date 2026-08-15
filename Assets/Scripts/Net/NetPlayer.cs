@@ -1,9 +1,9 @@
 using Fusion;
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
-    // Milestone 1 networked player. In Shared Mode the client with StateAuthority simulates
+    // Networked player. In Shared Mode the client with StateAuthority simulates
     // its own movement; NetworkTransform replicates it. Team is a [Networked] value set by the
     // owner at spawn, so every client colours the capsule by team consistently.
     public class NetPlayer : NetworkBehaviour

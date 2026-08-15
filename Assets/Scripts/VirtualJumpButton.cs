@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // On-screen JUMP button: queues a single jump on press (edge-triggered).
     public class VirtualJumpButton : MonoBehaviour, IPointerDownHandler

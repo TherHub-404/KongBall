@@ -1,7 +1,7 @@
 using Fusion;
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Networked, MASTER-AUTHORITATIVE match flow. Owns score, timer, phase and kickoff.
     // Players and the ball read the networked phase and react (freeze during countdown,

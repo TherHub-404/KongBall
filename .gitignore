@@ -57,3 +57,6 @@ crashlytics-build.properties
 .vs/
 .vscode/
 .idea/
+
+# Unity crash reports
+mono_crash*.json

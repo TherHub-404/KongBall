@@ -1,11 +1,11 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Centralized local input. Keyboard via the new Input System (Editor testing);
     // touch fed directly by the on-screen VirtualJoystick / VirtualActionButton.
-    public class LocalInputSource : MonoBehaviour, IPlayerInputSource
+    public class LocalInputSource : MonoBehaviour
     {
         InputAction _move;
         InputAction _action;   // Space, held-state
@@ -61,7 +61,7 @@ namespace CalcioStumble
         public void AddLookDelta(Vector2 d) { _lookDelta += d; }
         public Vector2 ConsumeLookDelta() { var v = _lookDelta; _lookDelta = Vector2.zero; return v; }
 
-        // ---- IPlayerInputSource ----
+        // ---- movement / action state (polled by NetPlayer) ----
         public Vector2 GetMove()
         {
             Vector2 kb = _move.ReadValue<Vector2>();

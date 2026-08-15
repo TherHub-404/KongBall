@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Trigger volume at a goal mouth. When the physical ball enters, the ball's authority
     // (the master) scores. scoringTeam = the team that scores by putting the ball in THIS goal.

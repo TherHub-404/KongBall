@@ -1,10 +1,10 @@
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
-    // Simple third-person camera for the network test: tracks the local player's POSITION
-    // with a FIXED orientation. Rotation never changes, so camera-relative movement can't
-    // create the spin feedback loop we hit earlier. Good framing, stable controls.
+    // Fallback third-person camera (used when the scene has no MatchCamera): tracks the local
+    // player POSITION with a FIXED orientation. Rotation never changes, so camera-relative
+    // movement cannot create a spin feedback loop. Good framing, stable controls.
     public class NetFollowCamera : MonoBehaviour
     {
         public Transform target;

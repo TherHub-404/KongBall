@@ -4,9 +4,9 @@ using Fusion;
 using Fusion.Sockets;
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
-    // Milestone 1 bootstrap: starts a Fusion NetworkRunner in Shared Mode, joins a fixed
+    // Bootstrap: starts a Fusion NetworkRunner in Shared Mode, joins a fixed
     // session, and spawns one player per client. Each client owns (StateAuthority) its own
     // player; NetPlayer moves it and NetworkTransform replicates to everyone else.
     public class NetLauncher : MonoBehaviour, INetworkRunnerCallbacks

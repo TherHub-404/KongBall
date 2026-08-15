@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Full-screen (background) drag catcher for camera look/orbit. Sits behind the joystick
     // and action button, so those consume their own touches; dragging anywhere else rotates

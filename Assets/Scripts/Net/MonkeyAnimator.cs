@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Procedural "toy" animation for the (rig-less) monkey mesh. Presentation only:
     // it reads gameplay state and squashes/leans/bobs the VISUAL transform. Runs on every
