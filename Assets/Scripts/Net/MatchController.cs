@@ -35,7 +35,22 @@ namespace KongBall
 
         public override void Spawned()
         {
-            Instance = this;
+            // Same duplicate-on-master-handover case as NetBall: two controllers would mean two
+            // scores and two timers. Lowest NetworkId survives, decided identically on every client.
+            if (Instance != null && Instance != this)
+            {
+                bool iAmOlder = Object.Id.Raw <= Instance.Object.Id.Raw;
+                var loser = iAmOlder ? Instance : this;
+                Instance = iAmOlder ? this : Instance;
+
+                Debug.LogWarning("[Net] duplicate MatchController detected, dropping " + loser.Object.Id);
+                if (loser.Object != null && loser.Object.HasStateAuthority)
+                    Runner.Despawn(loser.Object);
+
+                if (loser == this) return;
+            }
+            else Instance = this;
+
             if (HasStateAuthority)
             {
                 ScoreBlue = 0; ScoreRed = 0; Winner = -1;

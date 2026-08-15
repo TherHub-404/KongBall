@@ -28,10 +28,15 @@ namespace KongBall
         [Header("Team select UI (hidden after choosing)")]
         public GameObject teamPanel;
 
+        [Tooltip("Grace period after joining before the master may spawn missing shared objects, so " +
+                 "objects already in the room have time to replicate first.")]
+        public float settleSeconds = 3f;
+
         NetworkRunner _runner;
         Team _chosenTeam = Team.Blue;
         bool _started;
         float _ensureCooldown;
+        float _settleUntil;
 
         async void Start()
         {
@@ -92,6 +97,12 @@ namespace KongBall
         {
             if (runner == null || !runner.IsRunning || !runner.IsSharedModeMasterClient) return;
 
+            // Objects already in the room arrive asynchronously after joining. Without this wait, a
+            // client that becomes master before the existing ball has replicated to it would decide
+            // the ball is missing and spawn a second one.
+            if (_settleUntil <= 0f) _settleUntil = Time.time + settleSeconds;
+            if (Time.time < _settleUntil) return;
+
             if (ballPrefab != null && NetBall.Instance == null)
             {
                 runner.Spawn(ballPrefab, new Vector3(0f, 0.5f, 0f), Quaternion.identity);
@@ -109,7 +120,7 @@ namespace KongBall
         // only make it immediate.
         void Update()
         {
-            if (_runner == null || !_runner.IsRunning) return;
+            if (_runner == null || !_runner.IsRunning) { _settleUntil = 0f; return; }
             _ensureCooldown -= Time.deltaTime;
             if (_ensureCooldown > 0f) return;
             _ensureCooldown = 1f;

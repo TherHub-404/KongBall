@@ -70,7 +70,24 @@ namespace KongBall
 
         public override void Spawned()
         {
-            Instance = this;
+            // Two balls can briefly coexist: a client that becomes master before the room's existing
+            // ball has replicated to it sees no ball and spawns one. Resolve it deterministically —
+            // lowest NetworkId survives, so every client independently picks the same one — and let
+            // whoever holds authority over the loser despawn it.
+            if (Instance != null && Instance != this)
+            {
+                bool iAmOlder = Object.Id.Raw <= Instance.Object.Id.Raw;
+                var loser = iAmOlder ? Instance : this;
+                Instance = iAmOlder ? this : Instance;
+
+                Debug.LogWarning("[Net] duplicate ball detected, dropping " + loser.Object.Id);
+                if (loser.Object != null && loser.Object.HasStateAuthority)
+                    Runner.Despawn(loser.Object);
+
+                if (loser == this) return;   // this one is on its way out; don't initialise it
+            }
+            else Instance = this;
+
             _rb = GetComponent<Rigidbody>();
             _visual = transform.Find("Visual");
             _predictPos = transform.position;
