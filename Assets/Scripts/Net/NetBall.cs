@@ -21,6 +21,12 @@ namespace KongBall
         [Header("Possession")]
         public float possessionRadius = 1.5f;
         public float loseDistance = 2.8f;
+        [Tooltip("Reach multiplier when taking the ball off another player (hysteresis).")]
+        public float stealRadiusFactor = 0.7f;
+        [Tooltip("How much closer than the carrier a challenger must be to steal (metres).")]
+        public float stealMargin = 0.35f;
+        [Tooltip("Possession is locked for this long after any change (anti-thrash).")]
+        public float stealLockDuration = 0.5f;
 
         [Header("Field / goals")]
         public float halfX = 20f;
@@ -30,6 +36,10 @@ namespace KongBall
         public float goalHeight = 3.0f;  // max y that still counts
 
         [Networked] public PlayerRef Owner { get; set; }
+        // Bumped on EVERY possession change. Fusion's eventual consistency can collapse a value
+        // that flips back and forth (A -> None -> A) into no change at all, so presentation reacts
+        // to this counter, never to a transition of Owner itself.
+        [Networked] public int PossessionSeq { get; set; }
         [Networked] TickTimer StealLock { get; set; }   // brief lock after a possession change
 
         // Single shared ball per session — resolved once instead of searched every frame.
@@ -38,8 +48,6 @@ namespace KongBall
         Rigidbody _rb;
         Vector3 _dribbleVel;
         Collider _ballCol;
-
-        public bool CanClaim => StealLock.ExpiredOrNotRunning(Runner);
 
         public override void Spawned()
         {
@@ -78,26 +86,17 @@ namespace KongBall
             Vector3 bp = _rb.position;
             if (bp.y < -3f || Mathf.Abs(bp.x) > 27f || Mathf.Abs(bp.z) > 16f) { ResetToCentre(); return; }
 
-            // RECONCILE (robustness): the StateAuthority is the ONLY client that may own the ball.
-            // When authority just transferred to us, Owner can still hold the PREVIOUS authority's
-            // ref (their write is stale — Fusion overwrites non-authority property writes). If we
-            // let that stand, that player would "own" a ball only WE can simulate: they can't kick
-            // (Kick needs HasStateAuthority) and we'd dribble the ball onto them -> ball glued &
-            // uncontrollable for everyone until they wander off. Clearing it frees the ball so
-            // whoever is actually in range re-claims cleanly this tick (see NetPlayer.HandleBall).
-            if (Owner != PlayerRef.None && Owner != Runner.LocalPlayer)
-            {
-                Owner = PlayerRef.None;
-                _dribbleVel = Vector3.zero;
-            }
+            // POSSESSION — decided here and nowhere else. Picking the ball up is a purely spatial
+            // fact, so the authority (which already holds everyone's replicated positions) resolves
+            // it directly: no request, no authority handoff, no window in which two peers disagree.
+            UpdatePossession();
 
             if (Owner != PlayerRef.None)
             {
                 var op = GetPlayer(Owner);
-                bool lose = op == null || op.IsStumbled || op.IsHeld || FlatDist(op.transform.position, _rb.position) > loseDistance;
-                if (!lose)
+                if (op != null)
                 {
-                    // Tight local dribble (fluid — this client is the owner AND the authority).
+                    // Tight dribble toward a point led out in front of the carrier.
                     Vector3 anchor = op.transform.position + op.transform.forward * dribbleAhead;
                     anchor.y = Mathf.Max(radius, op.transform.position.y - 0.35f);
                     Vector3 newPos = Vector3.SmoothDamp(_rb.position, anchor, ref _dribbleVel, dribbleSmoothTime);
@@ -105,7 +104,6 @@ namespace KongBall
                     _rb.linearVelocity = _dribbleVel;
                     return;
                 }
-                FreeBall(op);
             }
 
             // Free ball: GOAL detection by coordinate (robust — the ball is trapped in the goal
@@ -116,33 +114,99 @@ namespace KongBall
                 Vector3 fp = _rb.position;
                 if (Mathf.Abs(fp.z) < goalHalfZ && fp.y < goalHeight)
                 {
-                    if (fp.x > goalLineX) { mc.RPC_Goal(0); ResetToCentre(); return; }   // Blue scores (+x)
-                    if (fp.x < -goalLineX) { mc.RPC_Goal(1); ResetToCentre(); return; }  // Red scores (-x)
+                    if (fp.x > goalLineX) { ScoreGoal(mc, 0); return; }   // Blue scores (+x)
+                    if (fp.x < -goalLineX) { ScoreGoal(mc, 1); return; }  // Red scores (-x)
                 }
             }
 
             // Unity physics + the real walls handle roll / bounce / arc.
         }
 
-        // Called by a player's client once it has (or is taking) authority.
-        public void SetOwner(PlayerRef p)
+        // Ball and MatchController are both spawned by — and simulated on — the master, so this is
+        // normally a direct call. The RPC stays as the fallback for the brief window around a master
+        // migration, when the two objects can momentarily sit on different peers.
+        void ScoreGoal(MatchController mc, int team)
         {
-            if (!HasStateAuthority) return;
-            Owner = p;
-            _dribbleVel = Vector3.zero;
-            // Protect the new owner briefly so possession doesn't thrash between two close players
-            // (the owner's dribble-lead moves the ball ahead, separating them within this window).
-            StealLock = TickTimer.CreateFromSeconds(Runner, 0.5f);
+            if (mc.Object != null && mc.Object.HasStateAuthority) mc.RegisterGoal(team);
+            else mc.RPC_Goal(team);
+            ResetToCentre();
         }
 
-        // Called by the owning player's client (owner == authority) to shoot. No RPC needed.
-        public void Kick(Vector3 dir, float power01)
+        // --- Possession, authority side only ---------------------------------------------------
+
+        void UpdatePossession()
         {
-            if (!HasStateAuthority) return;
+            // Does the current carrier still hold it?
+            if (Owner != PlayerRef.None)
+            {
+                var op = GetPlayer(Owner);
+                if (op == null || op.IsStumbled || op.IsHeld
+                    || FlatDist(op.transform.position, _rb.position) > loseDistance)
+                {
+                    FreeBall(op);
+                }
+            }
+
+            if (!StealLock.ExpiredOrNotRunning(Runner)) return;
+
+            // Nobody picks the ball up outside live play, so a player standing on the centre spot
+            // can't walk into possession during the countdown or a goal pause.
+            var mc = MatchController.Instance;
+            if (mc != null && mc.CurPhase != MatchController.Phase.Playing) return;
+
+            // A free ball is taken at full radius. Taking it OFF someone needs the challenger to be
+            // clearly closer (hysteresis), so two players jostling can't trade it every tick.
+            bool free = Owner == PlayerRef.None;
+            float reach = free ? possessionRadius : possessionRadius * stealRadiusFactor;
+
+            NetPlayer best = null;
+            float bestD = float.MaxValue;
+            foreach (var p in Runner.ActivePlayers)
+            {
+                if (p == Owner) continue;
+                var np = GetPlayer(p);
+                if (np == null || np.IsStumbled || np.IsHeld) continue;
+                float d = FlatDist(np.transform.position, _rb.position);
+                if (d < reach && d < bestD) { bestD = d; best = np; }
+            }
+            if (best == null) return;
+
+            if (!free)
+            {
+                var op = GetPlayer(Owner);
+                // The carrier keeps it unless the challenger beats them by a real margin.
+                if (op != null && bestD > FlatDist(op.transform.position, _rb.position) - stealMargin) return;
+            }
+
+            TakePossession(best.Object.StateAuthority);
+        }
+
+        void TakePossession(PlayerRef p)
+        {
+            Owner = p;
+            PossessionSeq++;
+            _dribbleVel = Vector3.zero;
+            // Protect the new carrier briefly so possession doesn't thrash between two close players
+            // (the dribble-lead moves the ball ahead, separating them within this window).
+            StealLock = TickTimer.CreateFromSeconds(Runner, stealLockDuration);
+        }
+
+        // --- Kick ------------------------------------------------------------------------------
+
+        // Sent by the carrier's client. Only the authority actually shoots: the sender never writes
+        // ball state. RpcInfo.Source is the real sender, so a client cannot kick on someone's behalf.
+        [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+        public void RPC_Kick(Vector3 dir, float power01, RpcInfo info = default)
+        {
+            if (Owner == PlayerRef.None || Owner != info.Source) return;  // not yours to kick
             dir.y = 0f;
             if (dir.sqrMagnitude < 1e-4f) return;
             dir.Normalize();
+
             Owner = PlayerRef.None;
+            PossessionSeq++;
+            _dribbleVel = Vector3.zero;
+
             float impulse = Mathf.Lerp(kickMin, kickMax, Mathf.Clamp01(power01));
             bool aerial = _rb.position.y > radius + 0.6f;
             float lift = aerial ? liftRatio * 2.2f : liftRatio;
@@ -150,7 +214,7 @@ namespace KongBall
             _rb.angularVelocity = Vector3.zero;
             _rb.AddForce(dir * impulse + Vector3.up * impulse * lift, ForceMode.Impulse);
             _rb.AddTorque(Vector3.Cross(Vector3.up, dir) * impulse * spinRatio, ForceMode.Impulse);
-            StealLock = TickTimer.CreateFromSeconds(Runner, 0.5f);  // don't let the kicker instantly re-own
+            StealLock = TickTimer.CreateFromSeconds(Runner, stealLockDuration);  // no instant re-take
         }
 
         [Header("Kick (impulse)")]
@@ -161,7 +225,9 @@ namespace KongBall
 
         void FreeBall(NetPlayer from)
         {
+            if (Owner == PlayerRef.None) return;
             Owner = PlayerRef.None;
+            PossessionSeq++;
             _dribbleVel = Vector3.zero;
             Vector3 away = from != null ? (_rb.position - from.transform.position) : Vector3.forward;
             away.y = 0f;
@@ -178,8 +244,9 @@ namespace KongBall
 
         void ResetToCentre()
         {
-            Owner = PlayerRef.None;
+            if (Owner != PlayerRef.None) { Owner = PlayerRef.None; PossessionSeq++; }
             _dribbleVel = Vector3.zero;
+            StealLock = TickTimer.CreateFromSeconds(Runner, stealLockDuration);
             _rb.linearVelocity = Vector3.zero;
             _rb.angularVelocity = Vector3.zero;
             _rb.position = new Vector3(0f, radius + 0.3f, 0f);

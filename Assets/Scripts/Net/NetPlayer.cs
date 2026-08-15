@@ -44,7 +44,6 @@ namespace KongBall
         public bool IsGrabbing => Runner != null && !GrabbingUntil.ExpiredOrNotRunning(Runner);
 
         TickTimer _pushCd;
-        TickTimer _claimCd;    // throttles ball state-authority requests
         TickTimer _grabLock;   // grabber is rooted while holding a victim
         NetPlayer _grabTarget;
         float _actionHeldTime;
@@ -297,29 +296,9 @@ namespace KongBall
             bool action = _input.GetActionHeld();
             bool pressEdge = action && !_prevAction;
 
-            // --- Possession claim (authority follows possessor) ---
-            if (Ball != null)
-            {
-                Vector3 a = transform.position; Vector3 b = Ball.transform.position; a.y = 0f; b.y = 0f;
-                float d = Vector3.Distance(a, b);
-                bool owned = Ball.Owner == Object.StateAuthority;
-                // Free ball: normal radius. Stealing from another owner needs you clearly closer
-                // (hysteresis) so possession doesn't thrash back and forth when two players contest.
-                bool ballFree = Ball.Owner == PlayerRef.None;
-                float claimR = ballFree ? Ball.possessionRadius : Ball.possessionRadius * 0.7f;
-                // Claim only when allowed (CanClaim gates the post-kick / post-steal lock, so you
-                // don't instantly re-own the ball you just kicked).
-                if (!owned && d < claimR && Ball.CanClaim)
-                {
-                    if (Ball.Object.HasStateAuthority) Ball.SetOwner(Object.StateAuthority);           // authority already mine -> own it
-                    else if (_claimCd.ExpiredOrNotRunning(Runner))                                        // request it (override allowed)
-                    {
-                        Ball.Object.RequestStateAuthority();
-                        _claimCd = TickTimer.CreateFromSeconds(Runner, 0.25f);
-                    }
-                }
-            }
-
+            // Possession is NOT claimed from here. The ball's authority decides it by proximity
+            // (NetBall.UpdatePossession) and we simply read the result — no client ever writes ball
+            // state, which is what makes possession impossible to desync.
             bool mine = Ball != null && Ball.Owner == Object.StateAuthority;
 
             if (mine)
@@ -330,8 +309,9 @@ namespace KongBall
                     Vector2 aim = _input.GetAimDelta();
                     if (aim.sqrMagnitude > 1f) _lastAim = aim;
                 }
-                // Kick on RELEASE toward the dragged direction (tap = straight ahead). I own it =>
-                // I'm the ball authority => kick locally (no RPC, instant).
+                // Kick on RELEASE toward the dragged direction (tap = straight ahead). The impulse
+                // is applied by the ball's authority; the animation and SFX fire here immediately
+                // (KickSeq is on MY object, so that write is authoritative and instant).
                 if (!action && _prevAction)
                 {
                     Vector3 dir;
@@ -345,7 +325,7 @@ namespace KongBall
                     float power = 0.5f;
                     if (_lastAim.sqrMagnitude > 1f) power = Mathf.Clamp01(_lastAim.magnitude / (Screen.height * 0.22f));
                     power = Mathf.Max(power, 0.35f);
-                    Ball.Kick(dir, power);
+                    Ball.RPC_Kick(dir, power);
                     KickSeq++; // triggers the kick animation on all clients
                     _kickIgnoreUntil = Time.time + 0.5f; // let the kicked ball escape my body
                 }

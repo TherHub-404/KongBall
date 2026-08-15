@@ -82,14 +82,14 @@ namespace KongBall
             }
         }
 
-        // Called by NetGoal (master only) when the ball enters a goal.
+        // Called by the ball's authority when the ball crosses a goal line.
         public void RegisterGoal(int scoringTeam)
         {
             if (!HasStateAuthority) return;
             if ((Phase)PhaseId != Phase.Playing) return; // goal lock outside PLAYING
             if (scoringTeam == 0) ScoreBlue++; else ScoreRed++;
-
-            if (NetBall.Instance != null) NetBall.Instance.KickoffReset(); // stop the ball re-triggering
+            // The ball recentres itself the moment it detects the goal (NetBall.ScoreGoal), so it
+            // cannot re-trigger while we switch phase — nothing to reset from here.
 
             if (!endless && (ScoreBlue >= scoreLimit || ScoreRed >= scoreLimit)) { Finish(); return; }
             PhaseId = (int)Phase.GoalPause;
