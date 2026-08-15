@@ -170,8 +170,8 @@ PlayerSettings:
   androidMaxAspectRatio: 2.4
   androidMinAspectRatio: 1
   applicationIdentifier:
-    Android: com.cyberwave.calciostumble
-    Standalone: com.unity.template.get-started
+    Android: com.kong.kongball
+    Standalone: com.kong.kongball
     iPhone: com.kong.kongball
   buildNumber:
     Standalone: 0
@@ -262,7 +262,7 @@ PlayerSettings:
   appleEnableProMotion: 0
   shaderPrecisionModel: 0
   clonedFromGUID: 20edc6fe8abf3be46a7d91a34ca094f9
-  templatePackageId: com.unity.template.get-started@3.0.1
+  templatePackageId: com.kong.kongball@3.0.1
   templateDefaultScene: 
   useCustomMainManifest: 0
   useCustomLauncherManifest: 0

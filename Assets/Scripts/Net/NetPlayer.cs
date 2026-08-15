@@ -1,9 +1,9 @@
 using Fusion;
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
-    // Milestone 1 networked player. In Shared Mode the client with StateAuthority simulates
+    // Networked player. In Shared Mode the client with StateAuthority simulates
     // its own movement; NetworkTransform replicates it. Team is a [Networked] value set by the
     // owner at spawn, so every client colours the capsule by team consistently.
     public class NetPlayer : NetworkBehaviour
@@ -44,7 +44,6 @@ namespace CalcioStumble
         public bool IsGrabbing => Runner != null && !GrabbingUntil.ExpiredOrNotRunning(Runner);
 
         TickTimer _pushCd;
-        TickTimer _claimCd;    // throttles ball state-authority requests
         TickTimer _grabLock;   // grabber is rooted while holding a victim
         NetPlayer _grabTarget;
         float _actionHeldTime;
@@ -58,7 +57,7 @@ namespace CalcioStumble
         Renderer _ring;
         int _sfxKickSeq;
         bool _wasStumbled;
-        NetBall _ball;
+        static NetBall Ball => NetBall.Instance;
         Collider _ballCol;
         bool _ballIgnored;
         float _kickIgnoreUntil;
@@ -116,8 +115,7 @@ namespace CalcioStumble
         void UpdateRing()
         {
             if (_ring == null) return;
-            if (_ball == null) _ball = UnityEngine.Object.FindAnyObjectByType<NetBall>();
-            bool mine = _ball != null && _ball.Owner == Object.InputAuthority;
+            bool mine = Ball != null && Ball.Owner == Object.StateAuthority;
             Color team = (NetTeam == 1) ? RedColor : BlueColor;
             Color c = team;
             if (mine)
@@ -131,8 +129,8 @@ namespace CalcioStumble
         // Ground aim preview while holding the kick button with the ball (local only).
         void UpdateAimLine()
         {
-            if (_input == null || _ball == null) { HideAim(); return; }
-            bool mine = _ball.Owner == Object.InputAuthority;
+            if (_input == null || Ball == null) { HideAim(); return; }
+            bool mine = Ball.Owner == Object.StateAuthority;
             if (!(mine && _input.GetActionHeld())) { HideAim(); return; }
 
             Vector2 d = _input.GetAimDelta();
@@ -151,7 +149,7 @@ namespace CalcioStumble
             power = Mathf.Clamp(power, 0.15f, 1f);
 
             EnsureAimLine();
-            Vector3 p0 = _ball.transform.position; p0.y = 0.12f;
+            Vector3 p0 = Ball.VisualPosition; p0.y = 0.12f;   // line up with the ball we can SEE
             Vector3 p1 = p0 + dir * Mathf.Lerp(1.5f, 6.5f, power);
             _aimLine.enabled = true;
             _aimLine.SetPosition(0, p0);
@@ -295,34 +293,13 @@ namespace CalcioStumble
         // Contextual ACTION: with ball = KICK (drag-aim, release), without ball = PUSH.
         void HandleBall()
         {
-            if (_ball == null) _ball = UnityEngine.Object.FindAnyObjectByType<NetBall>();
             bool action = _input.GetActionHeld();
             bool pressEdge = action && !_prevAction;
 
-            // --- Possession claim (authority follows possessor) ---
-            if (_ball != null)
-            {
-                Vector3 a = transform.position; Vector3 b = _ball.transform.position; a.y = 0f; b.y = 0f;
-                float d = Vector3.Distance(a, b);
-                bool owned = _ball.Owner == Object.InputAuthority;
-                // Free ball: normal radius. Stealing from another owner needs you clearly closer
-                // (hysteresis) so possession doesn't thrash back and forth when two players contest.
-                bool ballFree = _ball.Owner == PlayerRef.None;
-                float claimR = ballFree ? _ball.possessionRadius : _ball.possessionRadius * 0.7f;
-                // Claim only when allowed (CanClaim gates the post-kick / post-steal lock, so you
-                // don't instantly re-own the ball you just kicked).
-                if (!owned && d < claimR && _ball.CanClaim)
-                {
-                    if (_ball.Object.HasStateAuthority) _ball.SetOwner(Object.InputAuthority);           // authority already mine -> own it
-                    else if (_claimCd.ExpiredOrNotRunning(Runner))                                        // request it (override allowed)
-                    {
-                        _ball.Object.RequestStateAuthority();
-                        _claimCd = TickTimer.CreateFromSeconds(Runner, 0.25f);
-                    }
-                }
-            }
-
-            bool mine = _ball != null && _ball.Owner == Object.InputAuthority;
+            // Possession is NOT claimed from here. The ball's authority decides it by proximity
+            // (NetBall.UpdatePossession) and we simply read the result — no client ever writes ball
+            // state, which is what makes possession impossible to desync.
+            bool mine = Ball != null && Ball.Owner == Object.StateAuthority;
 
             if (mine)
             {
@@ -332,8 +309,9 @@ namespace CalcioStumble
                     Vector2 aim = _input.GetAimDelta();
                     if (aim.sqrMagnitude > 1f) _lastAim = aim;
                 }
-                // Kick on RELEASE toward the dragged direction (tap = straight ahead). I own it =>
-                // I'm the ball authority => kick locally (no RPC, instant).
+                // Kick on RELEASE toward the dragged direction (tap = straight ahead). The impulse
+                // is applied by the ball's authority; the animation and SFX fire here immediately
+                // (KickSeq is on MY object, so that write is authoritative and instant).
                 if (!action && _prevAction)
                 {
                     Vector3 dir;
@@ -347,7 +325,8 @@ namespace CalcioStumble
                     float power = 0.5f;
                     if (_lastAim.sqrMagnitude > 1f) power = Mathf.Clamp01(_lastAim.magnitude / (Screen.height * 0.22f));
                     power = Mathf.Max(power, 0.35f);
-                    _ball.Kick(dir, power);
+                    Ball.RPC_Kick(dir, power);
+                    Ball.NotifyLocalKick();  // mesh leaves the foot now, not a round trip later
                     KickSeq++; // triggers the kick animation on all clients
                     _kickIgnoreUntil = Time.time + 0.5f; // let the kicked ball escape my body
                 }
@@ -411,19 +390,21 @@ namespace CalcioStumble
             if (_grabTarget != null) { _grabTarget.RPC_Release(); _grabTarget = null; }
         }
 
-        // The ball ignores EVERY player's body (not just the owner's). Reason: on a non-owner's
-        // client the ball is a kinematic NetworkTransform proxy, so a colliding CharacterController
-        // gets blocked by it (the ball acts like a little wall) or bumps it — which stopped the
-        // approaching player from ever reaching claim range ("only one player can attach" bug).
-        // Possession is now purely proximity-based (claim); defense is via push/grab/steal, not
-        // body-blocking. Owner dribble/back-kick already needed this ignore anyway.
+        // The ball ignores the LOCAL player's body. Reason: on a non-owner's client the ball is a
+        // kinematic NetworkTransform proxy, so a moving CharacterController gets blocked by it (the
+        // ball acts like a little wall) — which stopped the approaching player from ever reaching
+        // claim range ("only one player can attach" bug). Possession is proximity-based; defense is
+        // via push/grab/steal, not body-blocking. Owner dribble/back-kick needed this ignore anyway.
+        // Registered once, the first tick both colliders exist.
         void UpdateBallIgnore()
         {
-            if (_ball == null) _ball = UnityEngine.Object.FindAnyObjectByType<NetBall>();
-            if (_ball == null || _cc == null) return;
-            if (_ballCol == null) _ballCol = _ball.GetComponent<Collider>();
+            if (_ballIgnored || _cc == null) return;
+            var ball = Ball;
+            if (ball == null) return;
+            if (_ballCol == null) _ballCol = ball.GetComponent<Collider>();
             if (_ballCol == null) return;
-            if (!_ballIgnored) { Physics.IgnoreCollision(_ballCol, _cc, true); _ballIgnored = true; }
+            Physics.IgnoreCollision(_ballCol, _cc, true);
+            _ballIgnored = true;
         }
 
         // Teleport back to the team's kickoff spot (called on a new kickoff).
@@ -431,7 +412,7 @@ namespace CalcioStumble
         {
             bool blue = NetTeam == 0;
             float x = blue ? -6f : 6f;
-            int id = Object.InputAuthority.PlayerId;
+            int id = Object.StateAuthority.PlayerId;
             float z = ((id % 3) - 1) * 3f;
             Vector3 pos = new Vector3(x, 1.1f, z);
             Quaternion rot = Quaternion.LookRotation(blue ? Vector3.right : Vector3.left, Vector3.up);

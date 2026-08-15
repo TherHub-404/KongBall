@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Reads the networked match state and drives: the score/timer line + a big centre banner
     // (3-2-1 countdown, VIA!, GOAL!, winner) with a pop animation and audio ticks.

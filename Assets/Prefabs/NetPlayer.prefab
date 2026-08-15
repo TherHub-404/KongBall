@@ -102,7 +102,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d4b3c1ff54292422fb8fda837238dfc4, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.MonkeyAnimator
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.MonkeyAnimator
   runRefSpeed: 6
   bobHeight: 0.14
   bobRate: 13
@@ -313,7 +313,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 927575549b8dd4c5bbcd68f6e6c49e41, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.NetPlayer
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.NetPlayer
   moveSpeed: 7
   acceleration: 55
   deceleration: 65

@@ -1,7 +1,7 @@
 using Fusion;
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Networked, MASTER-AUTHORITATIVE match flow. Owns score, timer, phase and kickoff.
     // Players and the ball read the networked phase and react (freeze during countdown,
@@ -33,8 +33,6 @@ namespace CalcioStumble
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
         public void RPC_Goal(int team) { RegisterGoal(team); }
 
-        NetBall _ball;
-
         public override void Spawned()
         {
             Instance = this;
@@ -44,6 +42,11 @@ namespace CalcioStumble
                 MatchTime = matchDuration;
                 StartCountdown();
             }
+        }
+
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            if (Instance == this) Instance = null;
         }
 
         void StartCountdown()
@@ -79,15 +82,14 @@ namespace CalcioStumble
             }
         }
 
-        // Called by NetGoal (master only) when the ball enters a goal.
+        // Called by the ball's authority when the ball crosses a goal line.
         public void RegisterGoal(int scoringTeam)
         {
             if (!HasStateAuthority) return;
             if ((Phase)PhaseId != Phase.Playing) return; // goal lock outside PLAYING
             if (scoringTeam == 0) ScoreBlue++; else ScoreRed++;
-
-            if (_ball == null) _ball = UnityEngine.Object.FindFirstObjectByType<NetBall>();
-            if (_ball != null) _ball.KickoffReset(); // stop the ball re-triggering
+            // The ball recentres itself the moment it detects the goal (NetBall.ScoreGoal), so it
+            // cannot re-trigger while we switch phase — nothing to reset from here.
 
             if (!endless && (ScoreBlue >= scoreLimit || ScoreRed >= scoreLimit)) { Finish(); return; }
             PhaseId = (int)Phase.GoalPause;
@@ -96,8 +98,7 @@ namespace CalcioStumble
 
         void Kickoff()
         {
-            if (_ball == null) _ball = UnityEngine.Object.FindFirstObjectByType<NetBall>();
-            if (_ball != null) _ball.KickoffReset();
+            if (NetBall.Instance != null) NetBall.Instance.KickoffReset();
             StartCountdown();
         }
 

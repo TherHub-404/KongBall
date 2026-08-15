@@ -1806,7 +1806,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 557530905}
-        m_TargetAssemblyTypeName: CalcioStumble.NetLauncher, Assembly-CSharp
+        m_TargetAssemblyTypeName: KongBall.NetLauncher, Assembly-CSharp
         m_MethodName: SelectTeamAndStart
         m_Mode: 3
         m_Arguments:
@@ -2606,7 +2606,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4464f6155c6cf4b4880cb12b5d59899e, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.NetLauncher
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.NetLauncher
   playerPrefab: {fileID: 1354026990851738168, guid: 7df54b3d400014806972f11c04916d6b, type: 3}
   ballPrefab: {fileID: 1769507573780795686, guid: 886210db70cb549eb83dec37c0b93d15, type: 3}
   matchPrefab: {fileID: 3266753603665489317, guid: 77793f23b409f4855978cfbc66302c64, type: 3}
@@ -3183,7 +3183,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cb054ecb219784fcabf3c220dfa5479a, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.VirtualActionButton
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.VirtualActionButton
   target: {fileID: 1745186003}
 --- !u!1 &640301200
 GameObject:
@@ -4013,7 +4013,6 @@ GameObject:
   m_Component:
   - component: {fileID: 851596011}
   - component: {fileID: 851596010}
-  - component: {fileID: 851596009}
   m_Layer: 0
   m_Name: NetGoal_Right
   m_TagString: Untagged
@@ -4021,19 +4020,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &851596009
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 851596008}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: efb39ca085d1e4cfaae711c25b64ca79, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.NetGoal
-  scoringTeam: 0
 --- !u!65 &851596010
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -4379,7 +4365,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b43e7da2c277a465da908ba6591e16e0, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.MatchCamera
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.MatchCamera
   backDistance: 10
   lookHeight: 1.2
   followLerp: 12
@@ -4825,7 +4811,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 27d38a1389be443adbccd84da95086c0, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.VirtualJoystick
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.VirtualJoystick
   background: {fileID: 960585549}
   handle: {fileID: 2070509531}
   range: 90
@@ -6273,7 +6259,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 209a7b8d574f64ef5bd2bf1318bfee5b, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.NetScoreUI
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.NetScoreUI
   scoreText: {fileID: 1292636001}
   bannerText: {fileID: 351461347}
 --- !u!114 &1292636001
@@ -6604,7 +6590,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls:
       - m_Target: {fileID: 557530905}
-        m_TargetAssemblyTypeName: CalcioStumble.NetLauncher, Assembly-CSharp
+        m_TargetAssemblyTypeName: KongBall.NetLauncher, Assembly-CSharp
         m_MethodName: SelectTeamAndStart
         m_Mode: 3
         m_Arguments:
@@ -8239,7 +8225,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2957c857fa66645f1b6eab57a07fe0b7, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.VirtualLookArea
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.VirtualLookArea
   target: {fileID: 1745186003}
 --- !u!114 &1609605504
 MonoBehaviour:
@@ -8289,7 +8275,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1675288029}
   - component: {fileID: 1675288028}
-  - component: {fileID: 1675288027}
   m_Layer: 0
   m_Name: NetGoal_Left
   m_TagString: Untagged
@@ -8297,19 +8282,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1675288027
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1675288026}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: efb39ca085d1e4cfaae711c25b64ca79, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.NetGoal
-  scoringTeam: 1
 --- !u!65 &1675288028
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -8477,7 +8449,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ff5781367c9274d28a8eab7e4c9296b2, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.LocalInputSource
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.LocalInputSource
 --- !u!4 &1745186004
 Transform:
   m_ObjectHideFlags: 0
@@ -8543,7 +8515,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 327303834bc0b4348bc49011f9683b84, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.VirtualJumpButton
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.VirtualJumpButton
   target: {fileID: 1745186003}
 --- !u!114 &1793531188
 MonoBehaviour:
@@ -9047,7 +9019,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0b08efb91f0fa4c02ba459822d65321f, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CalcioStumble.SfxManager
+  m_EditorClassIdentifier: Assembly-CSharp::KongBall.SfxManager
 --- !u!82 &1977956631
 AudioSource:
   m_ObjectHideFlags: 0

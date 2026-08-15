@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Lightweight on-screen joystick. Feeds a normalized [-1,1] vector straight into
     // LocalInputSource. No Input System virtual device involved.

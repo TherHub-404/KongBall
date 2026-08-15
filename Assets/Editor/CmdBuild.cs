@@ -6,7 +6,7 @@ using UnityEditor.Callbacks;
 using UnityEditor.iOS.Xcode;
 using UnityEngine;
 
-namespace CalcioStumble
+namespace KongBall
 {
     // Runs automatically after every iOS build. Declares that the app uses no non-exempt
     // encryption (ITSAppUsesNonExemptEncryption = false) so App Store Connect SKIPS the manual
@@ -28,7 +28,7 @@ namespace CalcioStumble
 
     // Command-line build entry point so the iOS Xcode project can be regenerated headlessly
     // (batchmode) without the Editor GUI being open. Invoke with:
-    //   Unity -quit -batchmode -projectPath <proj> -executeMethod CalcioStumble.CmdBuild.IOS -logFile -
+    //   Unity -quit -batchmode -projectPath <proj> -executeMethod KongBall.CmdBuild.IOS -logFile -
     public static class CmdBuild
     {
         // --- iOS / TestFlight config (team 9Z8F9Q282X = LORENZO MILANO, has the Distribution cert) ---

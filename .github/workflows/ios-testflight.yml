@@ -31,7 +31,7 @@ jobs:
           UNITY="/Applications/Unity/Hub/Editor/${UNITY_VERSION}/Unity.app/Contents/MacOS/Unity"
           "$UNITY" -quit -batchmode -nographics \
             -projectPath "$GITHUB_WORKSPACE" \
-            -executeMethod CalcioStumble.CmdBuild.IOSConfigured \
+            -executeMethod KongBall.CmdBuild.IOSConfigured \
             -logFile -
           test -d "$GITHUB_WORKSPACE/Builds/iOS/Unity-iPhone.xcodeproj" || { echo "Xcode project not generated"; exit 1; }
 
