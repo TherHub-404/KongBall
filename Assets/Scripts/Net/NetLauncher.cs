@@ -37,6 +37,7 @@ namespace KongBall
         bool _started;
         float _ensureCooldown;
         float _settleUntil;
+        ConnectingScreen _screen;
 
         async void Start()
         {
@@ -50,6 +51,7 @@ namespace KongBall
             _started = true;
             _chosenTeam = (Team)team;
             if (teamPanel != null) teamPanel.SetActive(false);
+            _screen = ConnectingScreen.Show("CONNESSIONE");
             _ = StartShared();
         }
 
@@ -66,7 +68,26 @@ namespace KongBall
                 PlayerCount = maxPlayers,
             });
 
-            Debug.Log(result.Ok ? "[Net] Connected (Shared)" : "[Net] StartGame FAILED: " + result.ShutdownReason);
+            if (result.Ok)
+            {
+                Debug.Log("[Net] Connected (Shared)");
+                if (_screen != null) _screen.SetMessage("ENTRO IN PARTITA");
+                return;
+            }
+
+            // Without this the player was stuck for good: _started stayed true, so the team buttons
+            // did nothing and there was no way back.
+            Debug.LogWarning("[Net] StartGame FAILED: " + result.ShutdownReason);
+            Destroy(_runner);
+            _runner = null;
+            _started = false;
+            if (_screen != null) _screen.ShowError("CONNESSIONE FALLITA\n" + result.ShutdownReason, ReopenTeamSelect);
+            _screen = null;   // the error screen owns itself until the player retries
+        }
+
+        void ReopenTeamSelect()
+        {
+            if (teamPanel != null) teamPanel.SetActive(true);
         }
 
         public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
@@ -121,6 +142,15 @@ namespace KongBall
         void Update()
         {
             if (_runner == null || !_runner.IsRunning) { _settleUntil = 0f; return; }
+
+            // The overlay comes down the moment our own player object is in the match — that is when
+            // NetPlayer takes over the camera and there is something to look at.
+            if (_screen != null && _runner.TryGetPlayerObject(_runner.LocalPlayer, out var mine) && mine != null)
+            {
+                _screen.Hide();
+                _screen = null;
+            }
+
             _ensureCooldown -= Time.deltaTime;
             if (_ensureCooldown > 0f) return;
             _ensureCooldown = 1f;
