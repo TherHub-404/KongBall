@@ -31,6 +31,7 @@ namespace KongBall
         NetworkRunner _runner;
         Team _chosenTeam = Team.Blue;
         bool _started;
+        float _ensureCooldown;
 
         async void Start()
         {
@@ -66,8 +67,12 @@ namespace KongBall
         public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
         {
             // Shared Mode: each client spawns only its own player object.
-            if (player != runner.LocalPlayer) return;
+            if (player == runner.LocalPlayer) SpawnLocalPlayer(runner, player);
+            EnsureMatchObjects(runner);
+        }
 
+        void SpawnLocalPlayer(NetworkRunner runner, PlayerRef player)
+        {
             bool blue = _chosenTeam == Team.Blue;
             float x = blue ? -6f : 6f;
             float z = ((player.PlayerId % 3) - 1) * 3f; // spread teammates along z
@@ -77,23 +82,72 @@ namespace KongBall
             var no = runner.Spawn(playerPrefab, pos, rot, player);
             var np = no != null ? no.GetComponent<NetPlayer>() : null;
             if (np != null) np.NetTeam = (int)_chosenTeam;
-            if (no != null) runner.SetPlayerObject(player, no); // ball looks the owner up by PlayerRef
+            if (no != null) runner.SetPlayerObject(player, no); // the ball looks players up by PlayerRef
             Debug.Log("[Net] Spawned local player team=" + _chosenTeam + " at " + pos);
+        }
 
-            // The Shared-Mode master spawns the single shared ball (once).
-            if (runner.IsSharedModeMasterClient && ballPrefab != null && NetBall.Instance == null)
+        // The master owns the shared objects. This used to live inside the local-player branch of
+        // OnPlayerJoined, so if the original master left the session nobody ever recreated them.
+        void EnsureMatchObjects(NetworkRunner runner)
+        {
+            if (runner == null || !runner.IsRunning || !runner.IsSharedModeMasterClient) return;
+
+            if (ballPrefab != null && NetBall.Instance == null)
             {
                 runner.Spawn(ballPrefab, new Vector3(0f, 0.5f, 0f), Quaternion.identity);
                 Debug.Log("[Net] Master spawned ball");
             }
-            if (runner.IsSharedModeMasterClient && matchPrefab != null && MatchController.Instance == null)
+            if (matchPrefab != null && MatchController.Instance == null)
             {
                 runner.Spawn(matchPrefab, Vector3.zero, Quaternion.identity);
                 Debug.Log("[Net] Master spawned MatchController");
             }
         }
 
-        public void OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }
+        // Master-client reassignment is not guaranteed to have happened by the time OnPlayerLeft
+        // fires, so a cheap heartbeat is what actually makes recovery reliable — the callbacks below
+        // only make it immediate.
+        void Update()
+        {
+            if (_runner == null || !_runner.IsRunning) return;
+            _ensureCooldown -= Time.deltaTime;
+            if (_ensureCooldown > 0f) return;
+            _ensureCooldown = 1f;
+            EnsureMatchObjects(_runner);
+        }
+
+        public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
+        {
+            if (!runner.IsSharedModeMasterClient) return;
+            ReclaimOrphans(runner, player);
+            EnsureMatchObjects(runner);
+        }
+
+        // Objects whose State Authority just walked out of the session would otherwise sit there
+        // unsimulated. The master takes them over. Mirrors the OnPlayerLeft handler in Photon's
+        // Pirate Adventure sample: anything Fusion already handles, or that we are not allowed to
+        // take, is skipped.
+        static void ReclaimOrphans(NetworkRunner runner, PlayerRef gone)
+        {
+            _orphanScratch.Clear();
+            runner.GetAllNetworkObjects(_orphanScratch);
+            foreach (var obj in _orphanScratch)
+            {
+                if (obj == null || obj.StateAuthority != gone) continue;
+                var f = obj.Flags;
+                if ((f & NetworkObjectFlags.MasterClientObject) == NetworkObjectFlags.MasterClientObject)
+                    continue;   // Fusion migrates it for us
+                if ((f & NetworkObjectFlags.DestroyWhenStateAuthorityLeaves) == NetworkObjectFlags.DestroyWhenStateAuthorityLeaves)
+                    continue;   // it is on its way out
+                if ((f & NetworkObjectFlags.AllowStateAuthorityOverride) != NetworkObjectFlags.AllowStateAuthorityOverride)
+                    continue;   // not ours to take
+                obj.RequestStateAuthority();
+                Debug.Log("[Net] Master reclaimed " + obj.name + " from player " + gone.PlayerId);
+            }
+            _orphanScratch.Clear();
+        }
+
+        static readonly List<NetworkObject> _orphanScratch = new List<NetworkObject>();
         public void OnInput(NetworkRunner runner, NetworkInput input) { }
         public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
         public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) { }

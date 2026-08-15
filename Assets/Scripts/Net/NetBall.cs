@@ -9,7 +9,7 @@ namespace KongBall
     // the Rigidbody kinematic and follow it via NetworkTransform. Requires the NetworkObject's
     // "Allow State Authority Override" flag so possession can pass between players.
     [RequireComponent(typeof(Rigidbody))]
-    public class NetBall : NetworkBehaviour
+    public class NetBall : NetworkBehaviour, IStateAuthorityChanged
     {
         [Header("Ball")]
         public float radius = 0.5f;
@@ -97,6 +97,19 @@ namespace KongBall
 
         // Only the state authority runs the Rigidbody; others follow NetworkTransform.
         void SyncKinematic() { if (_rb.isKinematic == HasStateAuthority) _rb.isKinematic = !HasStateAuthority; }
+
+        // Fired on every client when the ball's authority moves — in practice only on a master
+        // migration, since nothing contends for it any more. Drop anything locally predicted so the
+        // hand-over cannot leave a stale value behind, and re-seed the mesh where it currently is.
+        public void StateAuthorityChanged()
+        {
+            if (!HasStateAuthority && Object != null) Object.ResetToLatestState();
+            _dribbleVel = Vector3.zero;
+            _predictVel = Vector3.zero;
+            _predictPos = _visual != null ? _visual.position : transform.position;
+            _localReleased = false;
+            if (_rb != null) SyncKinematic();
+        }
 
         public override void FixedUpdateNetwork()
         {
