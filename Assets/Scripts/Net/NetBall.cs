@@ -28,6 +28,14 @@ namespace KongBall
         [Tooltip("Possession is locked for this long after any change (anti-thrash).")]
         public float stealLockDuration = 0.5f;
 
+        [Header("Visual prediction (carrier's client only)")]
+        [Tooltip("Seconds to ease the mesh onto the predicted dribble position.")]
+        public float predictBlendIn = 0.10f;
+        [Tooltip("Seconds to ease the mesh back onto the networked position.")]
+        public float predictBlendOut = 0.15f;
+        [Tooltip("Hard cap on how far the mesh may sit from the real ball (metres).")]
+        public float maxPredictOffset = 1.2f;
+
         [Header("Field / goals")]
         public float halfX = 20f;
         public float halfZ = 12f;
@@ -49,10 +57,23 @@ namespace KongBall
         Vector3 _dribbleVel;
         Collider _ballCol;
 
+        // Presentation-only prediction state (never networked, never read by simulation).
+        Transform _visual;
+        Vector3 _predictPos, _predictVel;
+        float _predictWeight;
+        int _seenSeq = -1;
+        bool _localReleased;      // I kicked; stop gluing the mesh to me before the state confirms
+        float _localReleasedAt;
+
+        // Where the ball LOOKS like it is on this client — what aiming and FX should line up with.
+        public Vector3 VisualPosition => _visual != null ? _visual.position : transform.position;
+
         public override void Spawned()
         {
             Instance = this;
             _rb = GetComponent<Rigidbody>();
+            _visual = transform.Find("Visual");
+            _predictPos = transform.position;
 
             _ballCol = GetComponent<Collider>();
             if (_ballCol != null && _ballCol.sharedMaterial == null)
@@ -120,6 +141,67 @@ namespace KongBall
             }
 
             // Unity physics + the real walls handle roll / bounce / arc.
+        }
+
+        // --- Visual prediction -----------------------------------------------------------------
+        // The networked root stays the single source of truth: collisions, possession and goals all
+        // read it. Only the MESH lies, and only on the client currently carrying the ball, so that
+        // a non-master carrier sees the ball glued to their feet instead of trailing by a round
+        // trip. The lie is bounded by maxPredictOffset and unwound as soon as possession ends.
+        //
+        // Deliberately LateUpdate and not Render: the mesh is a child of the networked root, so we
+        // must write it after NetworkTransform has finished placing that root for the frame. Nothing
+        // here is read by the simulation, so running outside the Fusion callbacks is safe.
+        void LateUpdate()
+        {
+            if (_visual == null || Runner == null) return;
+
+            // Any confirmed possession change re-seeds the prediction from where the mesh actually
+            // is, so gaining or losing the ball never snaps. Driven by the counter rather than by a
+            // transition of Owner, which Fusion is allowed to collapse away.
+            if (PossessionSeq != _seenSeq)
+            {
+                _seenSeq = PossessionSeq;
+                _localReleased = false;
+                _predictPos = _visual.position;
+                _predictVel = Vector3.zero;
+            }
+
+            // Safety valve: if a kick is never confirmed (dropped RPC), stop suppressing anyway.
+            if (_localReleased && Time.time - _localReleasedAt > 1f) _localReleased = false;
+
+            Vector3 truth = transform.position;
+            bool predicting = !HasStateAuthority && !_localReleased
+                              && Owner != PlayerRef.None && Owner == Runner.LocalPlayer;
+
+            if (predicting)
+            {
+                var me = GetPlayer(Owner);
+                if (me != null)
+                {
+                    Vector3 anchor = me.transform.position + me.transform.forward * dribbleAhead;
+                    anchor.y = Mathf.Max(radius, me.transform.position.y - 0.35f);
+                    _predictPos = Vector3.SmoothDamp(_predictPos, anchor, ref _predictVel, dribbleSmoothTime);
+                    // Never let the mesh drift further than this from the real ball.
+                    _predictPos = truth + Vector3.ClampMagnitude(_predictPos - truth, maxPredictOffset);
+                }
+                else predicting = false;
+            }
+
+            float rate = Time.deltaTime / Mathf.Max(0.0001f, predicting ? predictBlendIn : predictBlendOut);
+            _predictWeight = Mathf.MoveTowards(_predictWeight, predicting ? 1f : 0f, rate);
+
+            _visual.position = _predictWeight > 0.0001f
+                ? Vector3.Lerp(truth, _predictPos, _predictWeight)
+                : truth;
+        }
+
+        // Called on the kicker's client the instant it sends RPC_Kick. Without this the mesh would
+        // stay glued to the foot for a full round trip after the player has clearly shot.
+        public void NotifyLocalKick()
+        {
+            _localReleased = true;
+            _localReleasedAt = Time.time;
         }
 
         // Ball and MatchController are both spawned by — and simulated on — the master, so this is

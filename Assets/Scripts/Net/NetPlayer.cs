@@ -149,7 +149,7 @@ namespace KongBall
             power = Mathf.Clamp(power, 0.15f, 1f);
 
             EnsureAimLine();
-            Vector3 p0 = Ball.transform.position; p0.y = 0.12f;
+            Vector3 p0 = Ball.VisualPosition; p0.y = 0.12f;   // line up with the ball we can SEE
             Vector3 p1 = p0 + dir * Mathf.Lerp(1.5f, 6.5f, power);
             _aimLine.enabled = true;
             _aimLine.SetPosition(0, p0);
@@ -326,6 +326,7 @@ namespace KongBall
                     if (_lastAim.sqrMagnitude > 1f) power = Mathf.Clamp01(_lastAim.magnitude / (Screen.height * 0.22f));
                     power = Mathf.Max(power, 0.35f);
                     Ball.RPC_Kick(dir, power);
+                    Ball.NotifyLocalKick();  // mesh leaves the foot now, not a round trip later
                     KickSeq++; // triggers the kick animation on all clients
                     _kickIgnoreUntil = Time.time + 0.5f; // let the kicked ball escape my body
                 }
