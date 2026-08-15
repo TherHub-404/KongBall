@@ -20,9 +20,12 @@ name: iOS TestFlight
 # KEYCHAIN_PASSWORD is no longer used: the temporary keychain gets a random password
 # generated on the runner, which is one less secret to keep in sync.
 #
-# Known failure mode, from the note left on the previous cloud attempt (e0f09c9): headless
-# activation cannot get past two-factor auth. If the Unity account used here has 2FA on,
-# the licensing step fails and the fix is either a CI account without 2FA or a Pro seat.
+# Why this works where e0f09c9 did not: that attempt activated with
+# `Unity -batchmode -serial -username -password`, which Unity's own manual says does NOT apply
+# to Personal licenses ("To activate a license for Unity Personal, log in to the Unity Hub").
+# The Buildalon action goes through the Hub / licensing client instead, which is the supported
+# path for Personal. Note it still cannot answer a 2FA prompt, so the Unity account used here
+# must not have two-factor enabled.
 
 on:
   push:
