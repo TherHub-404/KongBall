@@ -210,6 +210,16 @@ namespace KongBall
             if (!HasStateAuthority || _input == null || _cc == null) return;
             float dt = Runner.DeltaTime;
 
+            // Safety net. The ball has always had one; the player never did, so anything that put a
+            // player through the floor meant falling forever with no way back into the match.
+            Vector3 here = transform.position;
+            if (here.y < -5f || Mathf.Abs(here.x) > 40f || Mathf.Abs(here.z) > 30f)
+            {
+                Debug.LogWarning("[Net] player out of bounds at " + here + " — respawning");
+                ResetToSpawn();
+                return;
+            }
+
             UpdateBallIgnore(); // per-client: the ball ignores ME only while I carry it (+kick grace)
 
             // Match phase: self-reset on a new kickoff, and freeze unless we're PLAYING.
@@ -407,19 +417,27 @@ namespace KongBall
             _ballIgnored = true;
         }
 
-        // Teleport back to the team's kickoff spot (called on a new kickoff).
+        // Teleport back to the team's kickoff spot (called on a new kickoff, and by the out-of-bounds
+        // safety net). Spawn height: the capsule is 1.9 tall with its pivot at the centre, so the
+        // feet sit 0.95 below this Y and the collision floor's top face is at y=0. The old 1.0/1.1
+        // left barely 5-15cm of clearance — thinner than it looks once skin width and float error
+        // are in play, and a CharacterController that starts the frame already intersecting a
+        // collider can be pushed out downwards instead of up. SpawnHeight keeps a real margin.
+        public const float SpawnHeight = 1.5f;
+
         void ResetToSpawn()
         {
             bool blue = NetTeam == 0;
             float x = blue ? -6f : 6f;
             int id = Object.StateAuthority.PlayerId;
             float z = ((id % 3) - 1) * 3f;
-            Vector3 pos = new Vector3(x, 1.1f, z);
+            Vector3 pos = new Vector3(x, SpawnHeight, z);
             Quaternion rot = Quaternion.LookRotation(blue ? Vector3.right : Vector3.left, Vector3.up);
             if (_cc != null) _cc.enabled = false;
             transform.SetPositionAndRotation(pos, rot);
             if (_cc != null) _cc.enabled = true;
             _horizVel = Vector3.zero; _vY = 0f;
+            _grounded = false;   // let the next tick re-detect it instead of assuming the old value
             StumbleUntil = default;
         }
 

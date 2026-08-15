@@ -102,7 +102,9 @@ namespace KongBall
             bool blue = _chosenTeam == Team.Blue;
             float x = blue ? -6f : 6f;
             float z = ((player.PlayerId % 3) - 1) * 3f; // spread teammates along z
-            Vector3 pos = new Vector3(x, 1f, z);
+            // Same clearance reasoning as NetPlayer.ResetToSpawn: drop in from a real height rather
+            // than starting the capsule a few centimetres off the floor.
+            Vector3 pos = new Vector3(x, NetPlayer.SpawnHeight, z);
             Quaternion rot = Quaternion.LookRotation(blue ? Vector3.right : Vector3.left, Vector3.up);
 
             var no = runner.Spawn(playerPrefab, pos, rot, player);
