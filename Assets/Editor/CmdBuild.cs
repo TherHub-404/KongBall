@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -45,9 +46,63 @@ namespace KongBall
             PlayerSettings.iOS.appleEnableAutomaticSigning = true; // manage in Xcode/xcodebuild at archive time
             // App icon is provided by the Apple Icon Composer .icon bundle (Assets/AppIcon/KongBall.icon)
             // via IOSIconComposerIcon post-processor. The legacy PNG SetupIcon() is intentionally skipped.
+            EnsureGltfShadersIncluded();
             AssetDatabase.SaveAssets();
             Debug.LogFormat("CMDBUILD config bundle={0} team={1}", BundleId, TeamId);
             IOS();
+        }
+
+        // The arena, goals, monkey and ball all take their materials from .glb files imported by
+        // glTFast's ScriptedImporter. Those materials are generated sub-assets, and the shaders they
+        // use live inside the package — a dependency the build's shader stripping does not reliably
+        // follow, so on device the meshes end up with no shader and simply are not drawn.
+        //
+        // Collect the shaders from the actual imported materials (no shader-name guessing, so this
+        // keeps working if glTFast renames them) and pin them into Always Included Shaders.
+        static void EnsureGltfShadersIncluded()
+        {
+            var wanted = new List<Shader>();
+            foreach (var path in AssetDatabase.GetAllAssetPaths())
+            {
+                if (!path.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase) &&
+                    !path.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase)) continue;
+
+                foreach (var obj in AssetDatabase.LoadAllAssetsAtPath(path))
+                {
+                    var mat = obj as Material;
+                    if (mat == null || mat.shader == null) continue;
+                    Debug.LogFormat("CMDBUILD glTF material '{0}' ({1}) uses shader '{2}'",
+                                    mat.name, path, mat.shader.name);
+                    if (!wanted.Contains(mat.shader)) wanted.Add(mat.shader);
+                }
+            }
+
+            if (wanted.Count == 0) { Debug.Log("CMDBUILD no glTF materials found"); return; }
+
+            var graphicsSettings = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/GraphicsSettings.asset");
+            if (graphicsSettings == null || graphicsSettings.Length == 0)
+            {
+                Debug.LogWarning("CMDBUILD could not open GraphicsSettings");
+                return;
+            }
+
+            var so = new SerializedObject(graphicsSettings[0]);
+            var list = so.FindProperty("m_AlwaysIncludedShaders");
+            var already = new HashSet<Object>();
+            for (int i = 0; i < list.arraySize; i++)
+                already.Add(list.GetArrayElementAtIndex(i).objectReferenceValue);
+
+            int added = 0;
+            foreach (var sh in wanted)
+            {
+                if (already.Contains(sh)) continue;
+                list.InsertArrayElementAtIndex(list.arraySize);
+                list.GetArrayElementAtIndex(list.arraySize - 1).objectReferenceValue = sh;
+                added++;
+                Debug.LogFormat("CMDBUILD pinned shader '{0}' into Always Included Shaders", sh.name);
+            }
+            if (added > 0) so.ApplyModifiedProperties();
+            Debug.LogFormat("CMDBUILD glTF shaders: {0} distinct, {1} newly pinned", wanted.Count, added);
         }
 
         // Assign the 1024 source to every iOS icon slot (Unity downsamples). This is what puts the
