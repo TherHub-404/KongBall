@@ -8,14 +8,21 @@ name: iOS TestFlight
 # Icon Composer .icon bundle, which needs Xcode 26 to compile, and a pinned image keeps
 # builds reproducible when GitHub rolls -latest forward.
 #
-# Required repository secrets:
-#   UNITY_USERNAME             Unity ID email
-#   UNITY_PASSWORD             Unity ID password
-#   IOS_DIST_CERT_P12_BASE64   Apple Distribution cert + private key, exported as .p12, base64
-#   IOS_DIST_CERT_PASSWORD     password set when exporting that .p12
-#   ASC_API_KEY_BASE64         App Store Connect API key (.p8), base64
-#   ASC_KEY_ID                 App Store Connect key id
-#   ASC_ISSUER_ID              App Store Connect issuer id
+# Repository secrets (all already exist from the earlier cloud attempt):
+#   UNITY_EMAIL          Unity ID email
+#   UNITY_PASSWORD       Unity ID password
+#   DIST_CERT_BASE64     Apple Distribution cert + private key, exported as .p12, base64
+#   DIST_CERT_PASSWORD   password set when exporting that .p12
+#   ASC_API_KEY_BASE64   App Store Connect API key (.p8), base64
+#   ASC_KEY_ID           App Store Connect key id
+#   ASC_ISSUER_ID        App Store Connect issuer id
+#
+# KEYCHAIN_PASSWORD is no longer used: the temporary keychain gets a random password
+# generated on the runner, which is one less secret to keep in sync.
+#
+# Known failure mode, from the note left on the previous cloud attempt (e0f09c9): headless
+# activation cannot get past two-factor auth. If the Unity account used here has 2FA on,
+# the licensing step fails and the fix is either a CI account without 2FA or a Pro seat.
 
 on:
   push:
@@ -61,7 +68,7 @@ jobs:
         uses: buildalon/activate-unity-license@v2
         with:
           license: 'Personal'
-          username: ${{ secrets.UNITY_USERNAME }}
+          username: ${{ secrets.UNITY_EMAIL }}
           password: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Generate Xcode project
@@ -84,25 +91,27 @@ jobs:
       # This is the step the self-hosted Mac never needed: the cert lived in its login keychain.
       - name: Import signing certificate
         env:
-          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
-          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          DIST_CERT_BASE64: ${{ secrets.DIST_CERT_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN="$RUNNER_TEMP/app-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(uuidgen)"
           CERT="$RUNNER_TEMP/dist.p12"
 
-          printf '%s' "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$CERT"
+          printf '%s' "$DIST_CERT_BASE64" | base64 --decode > "$CERT"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$CERT" -k "$KEYCHAIN" -P "$IOS_DIST_CERT_PASSWORD" \
-            -T /usr/bin/codesign -T /usr/bin/security
-          # Let codesign use the key without an interactive prompt.
+          security import "$CERT" -k "$KEYCHAIN" -P "$DIST_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/xcodebuild
+          # Let codesign and xcodebuild use the key without an interactive prompt.
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
-          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          # Make the temp keychain both visible and default to xcodebuild.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN"
           rm -f "$CERT"
 
           echo "Identities available to codesign:"
@@ -161,4 +170,4 @@ jobs:
       # to a persistent machine.
       - name: Clean up keychain
         if: always()
-        run: security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
+        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
