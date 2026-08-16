@@ -3,11 +3,12 @@ using UnityEngine;
 
 namespace KongBall
 {
-    // Networked ball — AUTHORITY FOLLOWS THE POSSESSOR (Shared Mode best practice).
-    // Whoever holds the ball requests StateAuthority and simulates it LOCALLY (dribble/kick),
-    // so every possessor gets the same instant feel as anyone else. Non-authority peers keep
-    // the Rigidbody kinematic and follow it via NetworkTransform. Requires the NetworkObject's
-    // "Allow State Authority Override" flag so possession can pass between players.
+    // Networked ball — ONE SIMULATOR, MANY REQUESTERS.
+    // A single peer (the master) owns and simulates the ball for the whole match; authority never
+    // migrates on possession. That peer alone decides who has the ball, by proximity, and applies
+    // every kick. No client ever writes ball state, which is what makes possession impossible to
+    // desync. Non-authority peers keep the Rigidbody kinematic and follow via NetworkTransform,
+    // and the carrier's client predicts only the MESH so dribbling still feels immediate.
     [RequireComponent(typeof(Rigidbody))]
     public class NetBall : NetworkBehaviour, IStateAuthorityChanged
     {
@@ -59,14 +60,24 @@ namespace KongBall
 
         // Presentation-only prediction state (never networked, never read by simulation).
         Transform _visual;
+        // A generated model does not always have its pivot at the centre of the mesh: this ball's
+        // origin sits on its underside. WireArtModels compensates with a local offset on the Visual,
+        // and this code must preserve it — writing Visual.position directly would wipe it out and
+        // draw the ball half a diameter above its own collider.
+        Vector3 _visualBaseLocal;
         Vector3 _predictPos, _predictVel;
         float _predictWeight;
         int _seenSeq = -1;
         bool _localReleased;      // I kicked; stop gluing the mesh to me before the state confirms
         float _localReleasedAt;
 
-        // Where the ball LOOKS like it is on this client — what aiming and FX should line up with.
-        public Vector3 VisualPosition => _visual != null ? _visual.position : transform.position;
+        // The centring offset in world space. It rotates with the ball, exactly as the mesh's own
+        // off-centre geometry does, so the two cancel and the ball spins in place.
+        Vector3 CentringOffset => _visual != null ? transform.TransformVector(_visualBaseLocal) : Vector3.zero;
+
+        // Where the ball LOOKS like it is on this client — its CENTRE, not the mesh pivot, so that
+        // aiming and FX line up with the ball rather than with an arbitrary point on it.
+        public Vector3 VisualPosition => _visual != null ? _visual.position - CentringOffset : transform.position;
 
         public override void Spawned()
         {
@@ -90,6 +101,7 @@ namespace KongBall
 
             _rb = GetComponent<Rigidbody>();
             _visual = transform.Find("Visual");
+            if (_visual != null) _visualBaseLocal = _visual.localPosition;   // centring authored by WireArtModels
             _predictPos = transform.position;
 
             _ballCol = GetComponent<Collider>();
@@ -123,7 +135,7 @@ namespace KongBall
             if (!HasStateAuthority && Object != null) Object.ResetToLatestState();
             _dribbleVel = Vector3.zero;
             _predictVel = Vector3.zero;
-            _predictPos = _visual != null ? _visual.position : transform.position;
+            _predictPos = _visual != null ? _visual.position - CentringOffset : transform.position;
             _localReleased = false;
             if (_rb != null) SyncKinematic();
         }
@@ -193,7 +205,7 @@ namespace KongBall
             {
                 _seenSeq = PossessionSeq;
                 _localReleased = false;
-                _predictPos = _visual.position;
+                _predictPos = _visual.position - CentringOffset;
                 _predictVel = Vector3.zero;
             }
 
@@ -221,9 +233,10 @@ namespace KongBall
             float rate = Time.deltaTime / Mathf.Max(0.0001f, predicting ? predictBlendIn : predictBlendOut);
             _predictWeight = Mathf.MoveTowards(_predictWeight, predicting ? 1f : 0f, rate);
 
-            _visual.position = _predictWeight > 0.0001f
+            Vector3 centre = _predictWeight > 0.0001f
                 ? Vector3.Lerp(truth, _predictPos, _predictWeight)
                 : truth;
+            _visual.position = centre + CentringOffset;
         }
 
         // Called on the kicker's client the instant it sends RPC_Kick. Without this the mesh would
