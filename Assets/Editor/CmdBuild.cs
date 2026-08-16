@@ -129,7 +129,8 @@ namespace KongBall
         // follow, so on device the meshes end up with no shader and simply are not drawn.
         //
         // Collect the shaders from the actual imported materials (no shader-name guessing, so this
-        // keeps working if glTFast renames them) and pin them into Always Included Shaders.
+        // keeps working if glTFast renames them) and pin them into Always Included Shaders, together
+        // with the URP shaders that only runtime-created materials use.
         static void EnsureGltfShadersIncluded()
         {
             var wanted = new List<Shader>();
@@ -146,6 +147,16 @@ namespace KongBall
                                     mat.name, path, mat.shader.name);
                     if (!wanted.Contains(mat.shader)) wanted.Add(mat.shader);
                 }
+            }
+
+            // ArenaDressing builds the sand plane at runtime, so its material has no asset in the
+            // project to keep its shader alive. Without this the sand ships shaderless and the whole
+            // ground renders magenta.
+            foreach (var name in new[] { "Universal Render Pipeline/Lit", "Universal Render Pipeline/Unlit" })
+            {
+                var sh = Shader.Find(name);
+                if (sh == null) { Debug.LogWarning("CMDBUILD shader not found: " + name); continue; }
+                if (!wanted.Contains(sh)) wanted.Add(sh);
             }
 
             if (wanted.Count == 0) { Debug.Log("CMDBUILD no glTF materials found"); return; }
