@@ -27,11 +27,6 @@ namespace KongBall
         public float wallHeight = 2.5f;
         public float goalHalfZ = 3.7f;   // gap in the end walls: GL_x_top/bot start at exactly z=+-3.7
 
-        [Header("Pitch surface")]
-        public float pitchMargin = 1.2f;     // grass beyond the rail
-        public float pitchThickness = 0.7f;  // visible lip above the sand
-        public float pitchTop = 0.02f;       // just above the Ground box, which we hide
-
         [Header("Stands")]
         public float railSegment = 3f;   // nominal; the real width is derived so segments tile exactly
         public float standHeight = 3f;
@@ -67,14 +62,13 @@ namespace KongBall
 
         void Start()
         {
-            HidePrimitives();
-            FitPitch();
+            Material pitchMat = TrimPitch();
 
             var holder = new GameObject("Scenery").transform;
             holder.SetParent(transform, false);
 
             var rng = new System.Random(seed);
-            BuildSand(holder);
+            BuildSand(holder, pitchMat);
             float standOut = BuildStands(holder, Load("Stand"));
             BuildRail(holder, Load("Wall_Bamboo"));
 
@@ -83,7 +77,8 @@ namespace KongBall
             var keepOut = new Vector2(halfX + standOut + 2f, halfZ + standOut + 2f);
             Plant(holder, Load("Palm"),  palms, 6.5f, 9f,   0f,        keepOut, 1.6f, rng, true);
             Plant(holder, Load("Ferns"), ferns, 0.9f, 1.7f, fernSink,  keepOut, 1.3f, rng, false);
-            Plant(holder, Load("Rock"),  rocks, 0.8f, 2.2f, 0.1f,      keepOut, 1.5f, rng, false);
+            // Kept low: at two metres the pale stone read as a balloon rather than a boulder.
+            Plant(holder, Load("Rock"),  rocks, 0.4f, 1.0f, 0.12f,     keepOut, 1.5f, rng, false);
             HangVines(holder, Load("Vines"), rng);
 
             // One draw call per model instead of one per copy — the difference between this being
@@ -100,10 +95,13 @@ namespace KongBall
         }
 
         // The white boxes around the pitch are the SAME objects that carry the colliders, so only
-        // their renderers go. Disabling the objects would delete the arena's physics. The Ground cube
-        // is hidden the same way: its top face at y=0 is what you actually saw as "the pitch", one
-        // centimetre above the model that was supposed to be showing.
-        void HidePrimitives()
+        // their renderers go. Disabling the objects would delete the arena's physics.
+        //
+        // The pitch itself is the Ground box: its textured top face at y=0 is what has always been
+        // on screen. ArenaVis, the glTF slab underneath it, ships 56 x 53 m — it ran nine metres past
+        // the touchline and put the stands on grass — so that is the one that goes. Returns the
+        // Ground material, which is a known-good URP material the sand can be built from.
+        Material TrimPitch()
         {
             int n = 0;
             var walls = GameObject.Find("Walls");
@@ -111,42 +109,26 @@ namespace KongBall
                 foreach (var r in walls.GetComponentsInChildren<Renderer>(true)) { r.enabled = false; n++; }
             else Debug.LogWarning("[Arena] no 'Walls' object to hide");
 
-            var ground = GameObject.Find("Ground");
-            if (ground != null)
-            {
-                var gr = ground.GetComponent<Renderer>();
-                if (gr != null) { gr.enabled = false; n++; }
-            }
-            Debug.Log("[Arena] hidden " + n + " primitive renderers (colliders untouched)");
-        }
-
-        // The pitch model ships 56 x 53 m, so it ran nine metres past the touchline and the stands
-        // ended up standing on grass. Resize it to the walled area and lift its surface just clear of
-        // the Ground box, so the green stops exactly where the rail begins and sand takes over.
-        void FitPitch()
-        {
             var vis = GameObject.Find("ArenaVis");
-            if (vis == null) { Debug.LogWarning("[Arena] no 'ArenaVis' pitch to fit"); return; }
-            var mf = vis.GetComponent<MeshFilter>();
-            if (mf == null || mf.sharedMesh == null) return;
+            if (vis != null)
+            {
+                var vr = vis.GetComponent<Renderer>();
+                if (vr != null) { vr.enabled = false; n++; }
+            }
+            Debug.Log("[Arena] hidden " + n + " renderers (colliders untouched)");
 
-            Bounds mb = mf.sharedMesh.bounds;
-            if (mb.size.x < 1e-4f || mb.size.y < 1e-4f || mb.size.z < 1e-4f) return;
-
-            float sx = (halfX + pitchMargin) * 2f / mb.size.x;
-            float sy = pitchThickness / mb.size.y;
-            float sz = (halfZ + pitchMargin) * 2f / mb.size.z;
-            vis.transform.localScale = new Vector3(sx, sy, sz);
-            vis.transform.localPosition = new Vector3(-mb.center.x * sx,
-                                                      pitchTop - mb.max.y * sy,
-                                                     -mb.center.z * sz);
-            Debug.Log("[Arena] pitch fitted to " + ((halfX + pitchMargin) * 2f).ToString("0.0") + " x "
-                      + ((halfZ + pitchMargin) * 2f).ToString("0.0") + " m, top at y=" + pitchTop);
+            var ground = GameObject.Find("Ground");
+            var gr = ground != null ? ground.GetComponent<Renderer>() : null;
+            return gr != null ? gr.sharedMaterial : null;
         }
 
         // A wide sand plane just under the pitch, so the world does not end in grey void. Sits below
         // the playing surface and carries no collider: the floor stays the Ground box.
-        void BuildSand(Transform holder)
+        //
+        // Built from the Ground material rather than the primitive's own. CreatePrimitive hands back
+        // the built-in Standard material, which has no shader under URP — that is what turned the
+        // whole ground magenta on device.
+        void BuildSand(Transform holder, Material source)
         {
             var sand = GameObject.CreatePrimitive(PrimitiveType.Quad);
             Destroy(sand.GetComponent<Collider>());
@@ -157,8 +139,31 @@ namespace KongBall
             sand.transform.localScale = new Vector3(sandRadius * 2f, sandRadius * 2f, 1f);
 
             var mr = sand.GetComponent<MeshRenderer>();
-            mr.sharedMaterial = new Material(mr.sharedMaterial) { color = new Color(0.93f, 0.87f, 0.71f) };
+            mr.sharedMaterial = SandMaterial(source);
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        static Material SandMaterial(Material source)
+        {
+            Material m;
+            if (source != null)
+            {
+                // A copy of the pitch material is guaranteed to have a shader that survived the
+                // build, since the pitch is visibly drawing. Drop its grass texture and tint it.
+                m = new Material(source);
+                if (m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", null);
+                if (m.HasProperty("_MainTex")) m.SetTexture("_MainTex", null);
+            }
+            else
+            {
+                var sh = Shader.Find("Universal Render Pipeline/Lit")
+                      ?? Shader.Find("Universal Render Pipeline/Unlit");
+                if (sh == null) { Debug.LogWarning("[Arena] no URP shader for the sand"); return null; }
+                m = new Material(sh);
+            }
+            m.color = new Color(0.93f, 0.87f, 0.71f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0f);
+            return m;
         }
 
         // The rail runs corner to corner in a whole number of segments, each stretched to the exact
