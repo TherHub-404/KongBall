@@ -46,10 +46,81 @@ namespace KongBall
             PlayerSettings.iOS.appleEnableAutomaticSigning = true; // manage in Xcode/xcodebuild at archive time
             // App icon is provided by the Apple Icon Composer .icon bundle (Assets/AppIcon/KongBall.icon)
             // via IOSIconComposerIcon post-processor. The legacy PNG SetupIcon() is intentionally skipped.
+            WireArtModels();
             EnsureGltfShadersIncluded();
             AssetDatabase.SaveAssets();
             Debug.LogFormat("CMDBUILD config bundle={0} team={1}", BundleId, TeamId);
             IOS();
+        }
+
+        // Art models generated with Meshy are imported by glTFast as ScriptedImporter sub-assets,
+        // whose internal file IDs only exist once Unity has imported them. That makes it impossible
+        // to point a prefab at a freshly added model by editing YAML alone, so the wiring is done
+        // here instead: at build time the Editor is running and can resolve the sub-assets by type.
+        //
+        // Each entry says "this prefab child should display this model", and the mesh is rescaled to
+        // the gameplay size, because a generated model arrives at whatever scale the generator chose.
+        struct ArtBinding
+        {
+            public string ModelPath;     // .glb to take the mesh and material from
+            public string PrefabPath;    // prefab to update
+            public string ChildName;     // child holding the MeshFilter / MeshRenderer
+            public float TargetSize;     // desired world-space diameter of the largest axis
+        }
+
+        static readonly ArtBinding[] Bindings =
+        {
+            // NetBall.radius is 0.5, so the ball must render one unit across.
+            new ArtBinding { ModelPath = "Assets/Models/Ball_Patchwork.glb",
+                             PrefabPath = "Assets/Prefabs/NetBall.prefab",
+                             ChildName = "Visual", TargetSize = 1.0f },
+        };
+
+        static void WireArtModels()
+        {
+            foreach (var b in Bindings)
+            {
+                if (!File.Exists(b.ModelPath)) { Debug.Log("CMDBUILD art: skipping missing " + b.ModelPath); continue; }
+
+                Mesh mesh = null; Material mat = null;
+                foreach (var o in AssetDatabase.LoadAllAssetsAtPath(b.ModelPath))
+                {
+                    if (mesh == null && o is Mesh m) mesh = m;
+                    if (mat == null && o is Material mm) mat = mm;
+                }
+                if (mesh == null) { Debug.LogWarning("CMDBUILD art: no mesh inside " + b.ModelPath); continue; }
+
+                var contents = PrefabUtility.LoadPrefabContents(b.PrefabPath);
+                try
+                {
+                    var child = contents.transform.Find(b.ChildName);
+                    if (child == null) { Debug.LogWarning("CMDBUILD art: no child '" + b.ChildName + "' in " + b.PrefabPath); continue; }
+
+                    var mf = child.GetComponent<MeshFilter>();
+                    var mr = child.GetComponent<MeshRenderer>();
+                    if (mf == null || mr == null) { Debug.LogWarning("CMDBUILD art: " + b.ChildName + " has no MeshFilter/MeshRenderer"); continue; }
+
+                    mf.sharedMesh = mesh;
+                    if (mat != null) mr.sharedMaterial = mat;
+
+                    // Normalise: generated models come at arbitrary scale and are not always centred
+                    // on their pivot, which would show up as a ball floating beside its own collider.
+                    Vector3 size = mesh.bounds.size;
+                    float largest = Mathf.Max(size.x, Mathf.Max(size.y, size.z));
+                    if (largest > 1e-4f)
+                    {
+                        float s = b.TargetSize / largest;
+                        child.localScale = Vector3.one * s;
+                        child.localPosition = -mesh.bounds.center * s;
+                    }
+
+                    PrefabUtility.SaveAsPrefabAsset(contents, b.PrefabPath);
+                    Debug.LogFormat("CMDBUILD art: {0} -> {1}/{2} (mesh '{3}', {4} tris, scale {5:0.000})",
+                                    b.ModelPath, b.PrefabPath, b.ChildName, mesh.name,
+                                    mesh.triangles.Length / 3, child.localScale.x);
+                }
+                finally { PrefabUtility.UnloadPrefabContents(contents); }
+            }
         }
 
         // The arena, goals, monkey and ball all take their materials from .glb files imported by
