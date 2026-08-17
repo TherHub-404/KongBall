@@ -31,6 +31,7 @@ namespace KongBall
         static MainMenu _current;
 
         GameObject _home;
+        GameObject _modes;
         GameObject _friends;
         InputField _code;
         Text _hint;
@@ -82,6 +83,7 @@ namespace KongBall
             }
 
             BuildHome();
+            BuildModes();
             BuildFriends();
             GoHome();
         }
@@ -90,20 +92,30 @@ namespace KongBall
         {
             _home = NewPanel("Home");
 
-            Button(_home.transform, "GIOCA  1 vs 1", 0f, 70f, Accent, Ink,
-                   () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.OneVsOne)));
-            Button(_home.transform, "GIOCA  2 vs 2", 0f, -30f, Accent, Ink,
-                   () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.TwoVsTwo)));
-            Button(_home.transform, "GIOCA CON GLI AMICI", 0f, -140f, Quiet, Color.white,
-                   () => { _home.SetActive(false); _friends.SetActive(true); });
+            Button(_home.transform, "GIOCA", 0f, 40f, Accent, Ink, () => Swap(_home, _modes));
+            Button(_home.transform, "GIOCA CON GLI AMICI", 0f, -80f, Quiet, Color.white,
+                   () => Swap(_home, _friends));
+        }
 
-            var note = NewText("Note", _home.transform, 24);
+        void BuildModes()
+        {
+            _modes = NewPanel("Modes");
+
+            Button(_modes.transform, "1 vs 1", 0f, 70f, Accent, Ink,
+                   () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.OneVsOne)));
+            Button(_modes.transform, "2 vs 2", 0f, -30f, Accent, Ink,
+                   () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.TwoVsTwo)));
+
+            var note = NewText("Note", _modes.transform, 24);
             if (note != null)
             {
-                note.text = "la partita inizia quando la squadra e' al completo";
+                note.text = "si gioca appena la squadra e' al completo.\n"
+                          + "se non si trova nessuno, si torna qui dopo due minuti.";
                 note.color = new Color(0.55f, 0.62f, 0.58f);
-                Place(note.rectTransform, 0f, -215f, 900f, 40f);
+                Place(note.rectTransform, 0f, -110f, 900f, 70f);
             }
+
+            Button(_modes.transform, "INDIETRO", 0f, -215f, Quiet, Color.white, GoHome, 320f, 70f);
         }
 
         void BuildFriends()
@@ -136,9 +148,16 @@ namespace KongBall
             Button(_friends.transform, "INDIETRO", 0f, -215f, Quiet, Color.white, GoHome, 320f, 70f);
         }
 
+        void Swap(GameObject from, GameObject to)
+        {
+            if (from != null) from.SetActive(false);
+            if (to != null) to.SetActive(true);
+        }
+
         void GoHome()
         {
             if (_home != null) _home.SetActive(true);
+            if (_modes != null) _modes.SetActive(false);
             if (_friends != null) _friends.SetActive(false);
             if (_hint != null) _hint.text = "";
         }

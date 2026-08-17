@@ -40,6 +40,10 @@ namespace KongBall
         [Tooltip("Seconds on the result screen before returning to the menu.")]
         public float postMatchSeconds = 6f;
 
+        [Tooltip("How long to wait for the room to fill before giving up and going back to the menu. " +
+                 "Restarts whenever somebody joins, so a room that is filling up is never abandoned.")]
+        public float waitTimeoutSeconds = 120f;
+
         [Tooltip("Grace period after joining before the master may spawn missing shared objects, so " +
                  "objects already in the room have time to replicate first.")]
         public float settleSeconds = 3f;
@@ -66,8 +70,16 @@ namespace KongBall
         float _ensureCooldown;
         float _settleUntil;
         float _leaveAt;
+        float _waitUntil;
+        int _lastSeated = -1;
+        string _notice;               // shown once we are back on the menu, instead of silently landing there
         ConnectingScreen _screen;
         GameObject _abandon;
+
+        // Seconds left before giving up on the waiting room, or -1 when not waiting. Local on
+        // purpose: it measures how long THIS player has been waiting, which is what runs out of
+        // patience — not how long the room has existed.
+        public float WaitRemaining => _waitUntil > 0f ? Mathf.Max(0f, _waitUntil - Time.time) : -1f;
 
         void Awake()
         {
@@ -286,6 +298,21 @@ namespace KongBall
             bool waiting = mc != null && mc.CurPhase == MatchController.Phase.Waiting;
             if (waiting && _abandon == null) _abandon = MainMenu.Overlay("ABBANDONA", LeaveMatch);
             else if (!waiting && _abandon != null) { Destroy(_abandon); _abandon = null; }
+
+            if (!waiting) { _waitUntil = 0f; _lastSeated = -1; return; }
+
+            // Somebody arriving is progress, so the clock starts again. Otherwise a room that fills
+            // up slowly would throw out the player who had the patience to wait for it.
+            int seated = mc.Seated;
+            if (seated != _lastSeated) { _lastSeated = seated; _waitUntil = Time.time + waitTimeoutSeconds; }
+
+            if (Time.time >= _waitUntil)
+            {
+                _notice = RoomCode != null ? "NESSUNO SI E' UNITO ALLA STANZA\n" + RoomCode
+                                           : "NESSUN AVVERSARIO TROVATO";
+                Debug.Log("[Net] waiting room timed out after " + waitTimeoutSeconds + "s");
+                LeaveMatch();
+            }
         }
 
         // A finished match used to be a dead end: the phase stayed Finished and nothing else ever
@@ -329,25 +356,35 @@ namespace KongBall
             _orphanScratch.Clear();
         }
 
-        // Covers both ends of a match and a connection that simply dropped: all three arrive here,
-        // and all three should leave the player somewhere they can act instead of in a frozen world.
+        // The single way out of a match, whatever ended it: the final whistle, a timed-out waiting
+        // room, ABBANDONA, or a connection that simply dropped. All of them should leave the player
+        // somewhere they can act instead of in a frozen world.
         public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
         {
             Debug.Log("[Net] shutdown: " + shutdownReason);
             TearDownRunner();
             _started = false;
             _leaveAt = 0f;
+            _waitUntil = 0f;
+            _lastSeated = -1;
             if (_screen != null) { _screen.Hide(); _screen = null; }
+
+            if (_notice != null)
+            {
+                // Say why, rather than dropping the player on the menu with no explanation.
+                ConnectingScreen.Show(_notice).ShowError(_notice, MainMenu.Show);
+                _notice = null;
+                return;
+            }
             MainMenu.Show();
         }
 
+        // Presentation is left to OnShutdown, which Fusion calls next: handling it in both places is
+        // what would stack two screens on top of each other.
         public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
         {
             Debug.LogWarning("[Net] disconnected: " + reason);
-            if (_screen != null) { _screen.Hide(); _screen = null; }
-            ConnectingScreen.Show("CONNESSIONE PERSA").ShowError("CONNESSIONE PERSA\n" + reason, MainMenu.Show);
-            TearDownRunner();
-            _started = false;
+            _notice = "CONNESSIONE PERSA\n" + reason;
         }
 
         static readonly List<NetworkObject> _orphanScratch = new List<NetworkObject>();
