@@ -35,23 +35,15 @@ namespace KongBall
 
         void Build()
         {
-            var canvas = gameObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = SortingOrder;
-
-            var scaler = gameObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1280f, 720f);
-            scaler.matchWidthOrHeight = 0.5f;
-            gameObject.AddComponent<GraphicRaycaster>();
+            Ui.NewOverlayCanvas(gameObject, SortingOrder);
             _group = gameObject.AddComponent<CanvasGroup>();
 
             // Backdrop: also swallows taps so the HUD underneath can't be poked while connecting.
-            var bg = NewImage("Backdrop", transform);
+            var bg = Ui.NewImage("Backdrop", transform);
             bg.color = Backdrop;
-            Stretch(bg.rectTransform);
+            Ui.Stretch(bg.rectTransform);
 
-            _label = NewText("Label", transform, 44);
+            _label = Ui.NewText("Label", transform, 44);
             if (_label != null)
             {
                 var rt = _label.rectTransform;
@@ -64,7 +56,7 @@ namespace KongBall
             _dots = new Image[3];
             for (int i = 0; i < _dots.Length; i++)
             {
-                var d = NewImage("Dot" + i, transform);
+                var d = Ui.NewImage("Dot" + i, transform);
                 d.color = Accent;
                 var rt = d.rectTransform;
                 rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -99,12 +91,12 @@ namespace KongBall
             btn.targetGraphic = img;
             btn.onClick.AddListener(() => { Destroy(gameObject); onRetry?.Invoke(); });
 
-            var t = NewText("Text", _retry.transform, 36);
+            var t = Ui.NewText("Text", _retry.transform, 36);
             if (t != null)
             {
                 t.text = "RIPROVA";
                 t.color = new Color(0.05f, 0.07f, 0.06f);
-                Stretch(t.rectTransform);
+                Ui.Stretch(t.rectTransform);
             }
         }
 
@@ -139,53 +131,5 @@ namespace KongBall
             }
         }
 
-        // --- tiny UI helpers -------------------------------------------------------------------
-
-        static Image NewImage(string name, Transform parent)
-        {
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            return go.AddComponent<Image>();
-        }
-
-        static Text NewText(string name, Transform parent, int size)
-        {
-            var font = BuiltinFont();
-            if (font == null) return null;   // no font available: dots alone still convey progress
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var t = go.AddComponent<Text>();
-            t.font = font;
-            t.fontSize = size;
-            t.alignment = TextAnchor.MiddleCenter;
-            t.color = Color.white;
-            t.horizontalOverflow = HorizontalWrapMode.Overflow;
-            t.verticalOverflow = VerticalWrapMode.Overflow;
-            return t;
-        }
-
-        static Font _font;
-        static bool _fontResolved;
-
-        static Font BuiltinFont()
-        {
-            if (_fontResolved) return _font;
-            _fontResolved = true;
-            // Unity renamed the built-in font; try both names rather than assuming a version.
-            foreach (var n in new[] { "LegacyRuntime.ttf", "Arial.ttf" })
-            {
-                try { _font = Resources.GetBuiltinResource<Font>(n); } catch { _font = null; }
-                if (_font != null) break;
-            }
-            return _font;
-        }
-
-        static void Stretch(RectTransform rt)
-        {
-            rt.anchorMin = Vector2.zero;
-            rt.anchorMax = Vector2.one;
-            rt.offsetMin = Vector2.zero;
-            rt.offsetMax = Vector2.zero;
-        }
     }
 }

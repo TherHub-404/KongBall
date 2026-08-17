@@ -60,26 +60,18 @@ namespace KongBall
 
         void Build()
         {
-            var canvas = gameObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = SortingOrder;
+            Ui.NewOverlayCanvas(gameObject, SortingOrder);
 
-            var scaler = gameObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1280f, 720f);
-            scaler.matchWidthOrHeight = 0.5f;
-            gameObject.AddComponent<GraphicRaycaster>();
-
-            var bg = NewImage("Backdrop", transform);
+            var bg = Ui.NewImage("Backdrop", transform);
             bg.color = Backdrop;
-            Stretch(bg.rectTransform);
+            Ui.Stretch(bg.rectTransform);
 
-            var title = NewText("Title", transform, 78);
+            var title = Ui.NewText("Title", transform, 78);
             if (title != null)
             {
                 title.text = "KONGBALL";
                 title.color = Accent;
-                Place(title.rectTransform, 0f, 210f, 900f, 110f);
+                Ui.Place(title.rectTransform, 0f, 210f, 900f, 110f);
             }
 
             BuildHome();
@@ -106,13 +98,13 @@ namespace KongBall
             Button(_modes.transform, "2 vs 2", 0f, -30f, Accent, Ink,
                    () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.TwoVsTwo)));
 
-            var note = NewText("Note", _modes.transform, 24);
+            var note = Ui.NewText("Note", _modes.transform, 24);
             if (note != null)
             {
                 note.text = "si gioca appena la squadra e' al completo.\n"
                           + "se non si trova nessuno, si torna qui dopo due minuti.";
                 note.color = new Color(0.55f, 0.62f, 0.58f);
-                Place(note.rectTransform, 0f, -110f, 900f, 70f);
+                Ui.Place(note.rectTransform, 0f, -110f, 900f, 70f);
             }
 
             Button(_modes.transform, "INDIETRO", 0f, -215f, Quiet, Color.white, GoHome, 320f, 70f);
@@ -122,12 +114,12 @@ namespace KongBall
         {
             _friends = NewPanel("Friends");
 
-            var head = NewText("Head", _friends.transform, 30);
+            var head = Ui.NewText("Head", _friends.transform, 30);
             if (head != null)
             {
                 head.text = "CREA UNA STANZA E DETTA IL CODICE,\nOPPURE ENTRA CON IL CODICE DI UN AMICO";
                 head.color = new Color(0.62f, 0.70f, 0.66f);
-                Place(head.rectTransform, 0f, 120f, 900f, 90f);
+                Ui.Place(head.rectTransform, 0f, 120f, 900f, 90f);
             }
 
             Button(_friends.transform, "CREA  1 vs 1", -170f, 30f, Accent, Ink,
@@ -138,11 +130,11 @@ namespace KongBall
             _code = NewInput("Code", _friends.transform, -110f, -70f, 400f);
             Button(_friends.transform, "ENTRA", 190f, -70f, Accent, Ink, JoinWithCode, 260f);
 
-            _hint = NewText("Hint", _friends.transform, 24);
+            _hint = Ui.NewText("Hint", _friends.transform, 24);
             if (_hint != null)
             {
                 _hint.color = new Color(0.9f, 0.55f, 0.45f);
-                Place(_hint.rectTransform, 0f, -135f, 900f, 40f);
+                Ui.Place(_hint.rectTransform, 0f, -135f, 900f, 40f);
             }
 
             Button(_friends.transform, "INDIETRO", 0f, -215f, Quiet, Color.white, GoHome, 320f, 70f);
@@ -166,26 +158,32 @@ namespace KongBall
 
         void JoinWithCode()
         {
-            string code = Normalise(_code != null ? _code.text : null);
+            string raw = _code != null ? _code.text : "";
+            string code = Normalise(raw);
             if (code.Length != CodeLength)
             {
-                if (_hint != null) _hint.text = "il codice e' di " + CodeLength + " caratteri";
+                // "il codice e' di 4 caratteri" is a lie when the player typed four of them and
+                // Normalise dropped a couple, so say which ones a code never contains.
+                bool dropped = raw.Trim().Length >= CodeLength;
+                if (_hint != null)
+                    _hint.text = dropped ? "un codice non contiene I, O, 0 o 1"
+                                         : "il codice e' di " + CodeLength + " caratteri";
                 return;
             }
             Launch(() => NetLauncher.Instance.JoinPrivateMatch(code));
         }
 
-        // The menu is torn down only once the launcher has accepted, so a missing launcher leaves the
-        // player on a working menu instead of a black screen.
-        static void Launch(System.Action start)
+        // The menu is torn down only once the launcher has ACCEPTED. Hiding regardless left the
+        // player looking at the empty pitch with no menu and no match whenever the launcher refused
+        // — which it does whenever a start is already in flight.
+        static void Launch(System.Func<bool> start)
         {
             if (NetLauncher.Instance == null)
             {
                 Debug.LogWarning("[Menu] no NetLauncher in the scene");
                 return;
             }
-            start();
-            Hide();
+            if (start()) Hide();
         }
 
         public static string NewCode()
@@ -212,17 +210,9 @@ namespace KongBall
         public static GameObject Overlay(string label, UnityEngine.Events.UnityAction onClick)
         {
             var go = new GameObject("Overlay_" + label);
-            var canvas = go.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = SortingOrder - 100;
+            Ui.NewOverlayCanvas(go, SortingOrder - 100);
 
-            var scaler = go.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1280f, 720f);
-            scaler.matchWidthOrHeight = 0.5f;
-            go.AddComponent<GraphicRaycaster>();
-
-            var img = NewImage("Btn", go.transform);
+            var img = Ui.NewImage("Btn", go.transform);
             img.color = Quiet;
             var rt = img.rectTransform;
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 1f);
@@ -233,8 +223,8 @@ namespace KongBall
             btn.targetGraphic = img;
             btn.onClick.AddListener(onClick);
 
-            var t = NewText("Text", img.transform, 30);
-            if (t != null) { t.text = label; t.color = Color.white; Stretch(t.rectTransform); }
+            var t = Ui.NewText("Text", img.transform, 30);
+            if (t != null) { t.text = label; t.color = Color.white; Ui.Stretch(t.rectTransform); }
             return go;
         }
 
@@ -244,32 +234,32 @@ namespace KongBall
         {
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(transform, false);
-            Stretch((RectTransform)go.transform);
+            Ui.Stretch((RectTransform)go.transform);
             return go;
         }
 
         void Button(Transform parent, string label, float x, float y, Color fill, Color ink,
                     UnityEngine.Events.UnityAction onClick, float width = 520f, float height = 88f)
         {
-            var img = NewImage("Btn_" + label, parent);
+            var img = Ui.NewImage("Btn_" + label, parent);
             img.color = fill;
-            Place(img.rectTransform, x, y, width, height);
+            Ui.Place(img.rectTransform, x, y, width, height);
 
             var btn = img.gameObject.AddComponent<Button>();
             btn.targetGraphic = img;
             btn.onClick.AddListener(onClick);
 
-            var t = NewText("Text", img.transform, 34);
-            if (t != null) { t.text = label; t.color = ink; Stretch(t.rectTransform); }
+            var t = Ui.NewText("Text", img.transform, 34);
+            if (t != null) { t.text = label; t.color = ink; Ui.Stretch(t.rectTransform); }
         }
 
         InputField NewInput(string name, Transform parent, float x, float y, float width)
         {
-            var img = NewImage(name, parent);
+            var img = Ui.NewImage(name, parent);
             img.color = Field;
-            Place(img.rectTransform, x, y, width, 88f);
+            Ui.Place(img.rectTransform, x, y, width, 88f);
 
-            var text = NewText("Text", img.transform, 44);
+            var text = Ui.NewText("Text", img.transform, 44);
             if (text == null) return null;
             text.supportRichText = false;
             text.color = Color.white;
@@ -279,12 +269,12 @@ namespace KongBall
             trt.offsetMin = new Vector2(16f, 0f);
             trt.offsetMax = new Vector2(-16f, 0f);
 
-            var placeholder = NewText("Placeholder", img.transform, 40);
+            var placeholder = Ui.NewText("Placeholder", img.transform, 40);
             if (placeholder != null)
             {
                 placeholder.text = "CODICE";
                 placeholder.color = new Color(0.45f, 0.52f, 0.49f);
-                Stretch(placeholder.rectTransform);
+                Ui.Stretch(placeholder.rectTransform);
             }
 
             var input = img.gameObject.AddComponent<InputField>();
@@ -303,57 +293,5 @@ namespace KongBall
             return input;
         }
 
-        static Image NewImage(string name, Transform parent)
-        {
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            return go.AddComponent<Image>();
-        }
-
-        static Text NewText(string name, Transform parent, int size)
-        {
-            var font = BuiltinFont();
-            if (font == null) return null;
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var t = go.AddComponent<Text>();
-            t.font = font;
-            t.fontSize = size;
-            t.alignment = TextAnchor.MiddleCenter;
-            t.color = Color.white;
-            t.horizontalOverflow = HorizontalWrapMode.Overflow;
-            t.verticalOverflow = VerticalWrapMode.Overflow;
-            return t;
-        }
-
-        static Font _font;
-        static bool _fontResolved;
-
-        static Font BuiltinFont()
-        {
-            if (_fontResolved) return _font;
-            _fontResolved = true;
-            foreach (var n in new[] { "LegacyRuntime.ttf", "Arial.ttf" })
-            {
-                try { _font = Resources.GetBuiltinResource<Font>(n); } catch { _font = null; }
-                if (_font != null) break;
-            }
-            return _font;
-        }
-
-        static void Place(RectTransform rt, float x, float y, float w, float h)
-        {
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(w, h);
-            rt.anchoredPosition = new Vector2(x, y);
-        }
-
-        static void Stretch(RectTransform rt)
-        {
-            rt.anchorMin = Vector2.zero;
-            rt.anchorMax = Vector2.one;
-            rt.offsetMin = Vector2.zero;
-            rt.offsetMax = Vector2.zero;
-        }
     }
 }

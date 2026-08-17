@@ -36,6 +36,8 @@ namespace KongBall
         // Teams the master has handed out but that have not come back over the network yet. Without
         // this, two players joining in the same breath would both be told the emptier side is theirs.
         readonly Dictionary<PlayerRef, int> _pending = new Dictionary<PlayerRef, int>();
+        readonly HashSet<PlayerRef> _live = new HashSet<PlayerRef>();
+        readonly List<PlayerRef> _stale = new List<PlayerRef>();
         float _assignCooldown;
 
         // Called by the ball's authority (coordinate goal detection) -> runs on the master.
@@ -119,15 +121,13 @@ namespace KongBall
         // would kick off with a player still standing on the wrong half.
         bool Ready()
         {
-            int seats = Seats > 0 ? Seats : 2;
-            int n = 0;
+            if (CountPlayers() < (Seats > 0 ? Seats : 2)) return false;
             foreach (var p in Runner.ActivePlayers)
             {
                 var np = PlayerOf(p);
                 if (np == null || !np.TeamAssigned) return false;
-                n++;
             }
-            return n >= seats;
+            return true;
         }
 
         int CountPlayers()
@@ -146,6 +146,22 @@ namespace KongBall
             if (_assignCooldown > 0f) return;
             _assignCooldown = 0.2f;
 
+            // Anyone who left before acknowledging would otherwise stay in _pending for good — and
+            // Photon reuses player slots, so the next arrival on that slot would look already handled
+            // and never be given a side, leaving the room waiting for a team that cannot complete.
+            if (_pending.Count > 0)
+            {
+                _live.Clear();
+                foreach (var p in Runner.ActivePlayers) _live.Add(p);
+                _stale.Clear();
+                foreach (var kv in _pending)
+                {
+                    var np = PlayerOf(kv.Key);
+                    if (!_live.Contains(kv.Key) || (np != null && np.TeamAssigned)) _stale.Add(kv.Key);
+                }
+                foreach (var p in _stale) _pending.Remove(p);
+            }
+
             int blue = 0, red = 0;
             foreach (var p in Runner.ActivePlayers)
             {
@@ -153,7 +169,6 @@ namespace KongBall
                 if (np == null) continue;
                 if (np.TeamAssigned)
                 {
-                    _pending.Remove(p);
                     if (np.NetTeam == (int)Team.Red) red++; else blue++;
                 }
                 else if (_pending.TryGetValue(p, out int t))

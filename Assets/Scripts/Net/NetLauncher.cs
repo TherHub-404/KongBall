@@ -73,6 +73,7 @@ namespace KongBall
         float _waitUntil;
         int _lastSeated = -1;
         string _notice;               // shown once we are back on the menu, instead of silently landing there
+        bool _starting;               // inside the awaited StartGame, which reports its own failure
         ConnectingScreen _screen;
         GameObject _abandon;
 
@@ -103,37 +104,50 @@ namespace KongBall
 
         // --- the three ways in -------------------------------------------------------------------
 
-        public void StartQuickMatch(MatchMode mode)
+        public bool StartQuickMatch(MatchMode mode)
         {
-            Begin(mode, null, true, true, "CERCO UNA PARTITA");
+            return Begin(mode, null, true, true, "CERCO UNA PARTITA");
         }
 
-        public void CreatePrivateMatch(MatchMode mode)
+        public bool CreatePrivateMatch(MatchMode mode)
         {
             string code = MainMenu.NewCode();
-            Begin(mode, code, false, true, "STANZA " + code);
+            return Begin(mode, code, false, true, "STANZA " + code);
         }
 
-        // The mode comes from whoever created the room, so joining does not choose one. The filter
-        // still carries the protocol version: an incompatible friend fails to join rather than
-        // joining a match that then misbehaves.
-        public void JoinPrivateMatch(string code)
+        // The mode comes from whoever created the room, so joining does not choose one.
+        //
+        // Note the version does NOT protect this path the way it protects matchmaking: session
+        // properties are filters only for a RANDOM join, and joining by name ignores them. That is
+        // why the protocol version is baked into the session name instead — an old build looking for
+        // the same four letters is looking for a different room.
+        public bool JoinPrivateMatch(string code)
         {
-            Begin(Mode, MainMenu.Normalise(code), false, false, "ENTRO NELLA STANZA " + code);
+            return Begin(Mode, MainMenu.Normalise(code), false, false, "ENTRO NELLA STANZA " + code);
         }
 
-        void Begin(MatchMode mode, string code, bool visible, bool mayCreate, string message)
+        // The room a code stands for. Two builds that disagree about the netcode must not be able to
+        // reach each other's rooms even with the right code.
+        static string SessionFor(string code)
         {
-            if (_started) return;
+            return code == null ? null : "v" + ProtocolVersion + "-" + code;
+        }
+
+        bool Begin(MatchMode mode, string code, bool visible, bool mayCreate, string message)
+        {
+            if (_started) return false;
+            if (code != null && code.Length != MainMenu.CodeLength) return false;
             _started = true;
             Mode = mode;
             RoomCode = code;
             _leaveAt = 0f;
+            _notice = null;
             _screen = ConnectingScreen.Show(message);
             _ = StartShared(visible, mayCreate);
+            return true;
         }
 
-        public async System.Threading.Tasks.Task StartShared(bool visible, bool mayCreate)
+        async System.Threading.Tasks.Task StartShared(bool visible, bool mayCreate)
         {
             if (_runner != null) return;
 
@@ -154,10 +168,11 @@ namespace KongBall
             // "most sense with MaxPlayers > 0 and games that can only start with more players" —
             // exactly this game: it packs players into the oldest room instead of scattering them
             // one per room, which is what would leave everybody waiting alone.
+            _starting = true;
             var result = await _runner.StartGame(new StartGameArgs
             {
                 GameMode = GameMode.Shared,
-                SessionName = RoomCode,
+                SessionName = SessionFor(RoomCode),
                 PlayerCount = (int)Mode,
                 SessionProperties = props,
                 IsVisible = visible,
@@ -165,6 +180,7 @@ namespace KongBall
                 EnableClientSessionCreation = mayCreate,
             });
 
+            _starting = false;
             if (result.Ok)
             {
                 Debug.Log("[Net] joined session '" + (_runner.SessionInfo != null ? _runner.SessionInfo.Name : "?")
@@ -200,6 +216,9 @@ namespace KongBall
 
         public void LeaveMatch()
         {
+            // The button goes first: shutdown is asynchronous, so leaving it on screen invites a
+            // second tap that shuts an already-shutting-down runner down again.
+            if (_abandon != null) { Destroy(_abandon); _abandon = null; }
             if (_runner == null) { MainMenu.Show(); return; }
             _runner.Shutdown();   // OnShutdown puts us back on the menu
         }
@@ -292,10 +311,16 @@ namespace KongBall
 
             // Joining by code does not pick a mode — the room already has one. Adopt it, so that if
             // this peer later becomes master its idea of the match size is the room's, not the
-            // default it happened to start with.
-            if (RoomCode != null && mc != null && mc.Seats > 0) Mode = (MatchMode)mc.Seats;
+            // default it happened to start with. Only a real seat count is adopted: a stray value
+            // would cast into a MatchMode that means nothing.
+            if (RoomCode != null && mc != null
+                && (mc.Seats == (int)MatchMode.OneVsOne || mc.Seats == (int)MatchMode.TwoVsTwo))
+                Mode = (MatchMode)mc.Seats;
 
-            bool waiting = mc != null && mc.CurPhase == MatchController.Phase.Waiting;
+            // No controller yet counts as waiting, deliberately. It is the master's job to spawn one,
+            // and if that never happens the player would otherwise sit in an empty arena with no
+            // banner, no ABBANDONA and no timeout — the exact dead end this was meant to remove.
+            bool waiting = mc == null || mc.CurPhase == MatchController.Phase.Waiting;
             if (waiting && _abandon == null) _abandon = MainMenu.Overlay("ABBANDONA", LeaveMatch);
             else if (!waiting && _abandon != null) { Destroy(_abandon); _abandon = null; }
 
@@ -303,7 +328,7 @@ namespace KongBall
 
             // Somebody arriving is progress, so the clock starts again. Otherwise a room that fills
             // up slowly would throw out the player who had the patience to wait for it.
-            int seated = mc.Seated;
+            int seated = mc != null ? mc.Seated : 0;
             if (seated != _lastSeated) { _lastSeated = seated; _waitUntil = Time.time + waitTimeoutSeconds; }
 
             if (Time.time >= _waitUntil)
@@ -362,6 +387,12 @@ namespace KongBall
         public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
         {
             Debug.Log("[Net] shutdown: " + shutdownReason);
+
+            // A StartGame that fails shuts the runner down from inside the await, so this fires while
+            // StartShared is still holding the result. Presenting here as well would stack a menu
+            // under the failure screen; StartShared reports that case itself.
+            if (_starting) return;
+
             TearDownRunner();
             _started = false;
             _leaveAt = 0f;
