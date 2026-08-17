@@ -4,15 +4,15 @@ using UnityEngine.UI;
 
 namespace KongBall
 {
-    // The front door: two ways in, kept deliberately separate.
+    // Everything that is not the match: home, mode choice, private rooms, waiting room.
     //
-    //  GIOCA          -> matchmaking. No session name, so Photon joins a matching room or creates
-    //                    one, and the mode is a matchmaking filter, so 1v1 and 2v2 never mix.
-    //  CON GLI AMICI  -> a named room created invisible, which Photon excludes from random
-    //                    matchmaking. A code is the only way in.
+    // These are screens, not overlays. MenuStage puts a coloured field and the monkey behind them and
+    // takes the game off screen entirely — the previous version was a translucent sheet over the live
+    // pitch, joystick and all, which made every one of these look like a dialog interrupting a match
+    // rather than a place the player is in.
     //
-    // Built entirely in code, like ConnectingScreen and the SFX: no scene authoring, so it cannot
-    // drift out of sync with a prefab and it works in the one scene we ship.
+    // Built in code, like ConnectingScreen and the SFX: no scene authoring, and it works in the one
+    // scene we ship.
     public class MainMenu : MonoBehaviour
     {
         public const int CodeLength = 4;
@@ -22,26 +22,59 @@ namespace KongBall
         const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
         const int SortingOrder = 4900;
-        static readonly Color Backdrop = new Color(0.05f, 0.09f, 0.07f, 0.97f);
-        static readonly Color Accent = new Color(0.35f, 0.85f, 0.65f);
-        static readonly Color Quiet = new Color(0.22f, 0.30f, 0.27f);
-        static readonly Color Field = new Color(0.12f, 0.16f, 0.14f);
-        static readonly Color Ink = new Color(0.05f, 0.07f, 0.06f);
+
+        // Tuned against MenuStage.Background, which is a strong yellow: mint on yellow was unreadable.
+        static readonly Color Ink = new Color(0.10f, 0.15f, 0.09f);
+        static readonly Color Primary = new Color(0.10f, 0.40f, 0.23f);
+        static readonly Color Secondary = new Color(0.30f, 0.25f, 0.11f);
+        static readonly Color Field = new Color(1f, 0.98f, 0.92f);
+        static readonly Color Warn = new Color(0.60f, 0.14f, 0.08f);
 
         static MainMenu _current;
 
-        GameObject _home;
-        GameObject _modes;
-        GameObject _friends;
+        GameObject _home, _modes, _friends, _waiting;
         InputField _code;
-        Text _hint;
+        Text _hint, _waitCount, _waitCode, _waitClock;
+        System.Action _onAbandon;
+
+        // --- entry points -------------------------------------------------------------------------
 
         public static void Show()
         {
-            if (_current != null) { _current.GoHome(); return; }
-            var go = new GameObject("MainMenu");
-            _current = go.AddComponent<MainMenu>();
-            _current.Build();
+            MenuStage.Show();
+            Ensure().GoHome();
+        }
+
+        public static void ShowWaiting(System.Action onAbandon)
+        {
+            MenuStage.Show();
+            var m = Ensure();
+            m._onAbandon = onAbandon;
+            m.Only(m._waiting);
+        }
+
+        // Live numbers for the waiting screen. Pushed in rather than pulled, so this file needs to
+        // know nothing about runners or match phases.
+        public static void SetWaiting(int seated, int seats, string code, float secondsLeft)
+        {
+            if (_current == null) return;
+            if (_current._waitCount != null) _current._waitCount.text = seated + " / " + Mathf.Max(2, seats);
+            if (_current._waitCode != null)
+            {
+                bool has = !string.IsNullOrEmpty(code);
+                _current._waitCode.text = has ? "CODICE   " + code : "";
+                _current._waitCode.enabled = has;
+            }
+            if (_current._waitClock != null)
+            {
+                bool has = secondsLeft >= 0f;
+                if (has)
+                {
+                    int s = Mathf.CeilToInt(secondsLeft);
+                    _current._waitClock.text = (s / 60) + ":" + (s % 60).ToString("00");
+                }
+                _current._waitClock.enabled = has;
+            }
         }
 
         public static void Hide()
@@ -49,6 +82,15 @@ namespace KongBall
             if (_current == null) return;
             Destroy(_current.gameObject);
             _current = null;
+        }
+
+        static MainMenu Ensure()
+        {
+            if (_current != null) return _current;
+            var go = new GameObject("MainMenu");
+            _current = go.AddComponent<MainMenu>();
+            _current.Build();
+            return _current;
         }
 
         void OnDestroy()
@@ -62,95 +104,117 @@ namespace KongBall
         {
             Ui.NewOverlayCanvas(gameObject, SortingOrder);
 
-            var bg = Ui.NewImage("Backdrop", transform);
-            bg.color = Backdrop;
-            Ui.Stretch(bg.rectTransform);
-
-            var title = Ui.NewText("Title", transform, 78);
+            var title = Ui.NewText("Title", transform, 76);
             if (title != null)
             {
                 title.text = "KONGBALL";
-                title.color = Accent;
-                Ui.Place(title.rectTransform, 0f, 210f, 900f, 110f);
+                title.color = Ink;
+                Ui.Place(title.rectTransform, 0f, 245f, 900f, 100f);
             }
 
             BuildHome();
             BuildModes();
             BuildFriends();
+            BuildWaiting();
             GoHome();
         }
 
         void BuildHome()
         {
             _home = NewPanel("Home");
-
-            Button(_home.transform, "GIOCA", 0f, 40f, Accent, Ink, () => Swap(_home, _modes));
-            Button(_home.transform, "GIOCA CON GLI AMICI", 0f, -80f, Quiet, Color.white,
-                   () => Swap(_home, _friends));
+            Button(_home.transform, "GIOCA", 0f, -120f, Primary, Color.white, () => Only(_modes));
+            Button(_home.transform, "GIOCA CON GLI AMICI", 0f, -225f, Secondary, Color.white,
+                   () => Only(_friends), 520f, 76f);
         }
 
         void BuildModes()
         {
             _modes = NewPanel("Modes");
-
-            Button(_modes.transform, "1 vs 1", 0f, 70f, Accent, Ink,
+            Button(_modes.transform, "1 vs 1", 0f, -95f, Primary, Color.white,
                    () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.OneVsOne)));
-            Button(_modes.transform, "2 vs 2", 0f, -30f, Accent, Ink,
+            Button(_modes.transform, "2 vs 2", 0f, -190f, Primary, Color.white,
                    () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.TwoVsTwo)));
-
-            var note = Ui.NewText("Note", _modes.transform, 24);
-            if (note != null)
-            {
-                note.text = "si gioca appena la squadra e' al completo.\n"
-                          + "se non si trova nessuno, si torna qui dopo due minuti.";
-                note.color = new Color(0.55f, 0.62f, 0.58f);
-                Ui.Place(note.rectTransform, 0f, -110f, 900f, 70f);
-            }
-
-            Button(_modes.transform, "INDIETRO", 0f, -215f, Quiet, Color.white, GoHome, 320f, 70f);
+            Button(_modes.transform, "INDIETRO", 0f, -268f, Secondary, Color.white, GoHome, 320f, 56f);
         }
 
         void BuildFriends()
         {
             _friends = NewPanel("Friends");
 
-            var head = Ui.NewText("Head", _friends.transform, 30);
+            var head = Ui.NewText("Head", _friends.transform, 27);
             if (head != null)
             {
-                head.text = "CREA UNA STANZA E DETTA IL CODICE,\nOPPURE ENTRA CON IL CODICE DI UN AMICO";
-                head.color = new Color(0.62f, 0.70f, 0.66f);
-                Ui.Place(head.rectTransform, 0f, 120f, 900f, 90f);
+                head.text = "CREA UNA STANZA E DETTA IL CODICE,\nOPPURE ENTRA CON QUELLO DI UN AMICO";
+                head.color = Ink;
+                Ui.Place(head.rectTransform, 0f, 145f, 900f, 80f);
             }
 
-            Button(_friends.transform, "CREA  1 vs 1", -170f, 30f, Accent, Ink,
-                   () => Launch(() => NetLauncher.Instance.CreatePrivateMatch(MatchMode.OneVsOne)), 300f);
-            Button(_friends.transform, "CREA  2 vs 2", 170f, 30f, Accent, Ink,
-                   () => Launch(() => NetLauncher.Instance.CreatePrivateMatch(MatchMode.TwoVsTwo)), 300f);
+            Button(_friends.transform, "CREA  1 vs 1", -170f, 55f, Primary, Color.white,
+                   () => Launch(() => NetLauncher.Instance.CreatePrivateMatch(MatchMode.OneVsOne)), 300f, 76f);
+            Button(_friends.transform, "CREA  2 vs 2", 170f, 55f, Primary, Color.white,
+                   () => Launch(() => NetLauncher.Instance.CreatePrivateMatch(MatchMode.TwoVsTwo)), 300f, 76f);
 
-            _code = NewInput("Code", _friends.transform, -110f, -70f, 400f);
-            Button(_friends.transform, "ENTRA", 190f, -70f, Accent, Ink, JoinWithCode, 260f);
+            _code = NewInput("Code", _friends.transform, -110f, -50f, 380f);
+            Button(_friends.transform, "ENTRA", 175f, -50f, Primary, Color.white, JoinWithCode, 250f, 76f);
 
             _hint = Ui.NewText("Hint", _friends.transform, 24);
             if (_hint != null)
             {
-                _hint.color = new Color(0.9f, 0.55f, 0.45f);
-                Ui.Place(_hint.rectTransform, 0f, -135f, 900f, 40f);
+                _hint.color = Warn;
+                Ui.Place(_hint.rectTransform, 0f, -115f, 900f, 40f);
             }
 
-            Button(_friends.transform, "INDIETRO", 0f, -215f, Quiet, Color.white, GoHome, 320f, 70f);
+            Button(_friends.transform, "INDIETRO", 0f, -240f, Secondary, Color.white, GoHome, 320f, 56f);
         }
 
-        void Swap(GameObject from, GameObject to)
+        void BuildWaiting()
         {
-            if (from != null) from.SetActive(false);
-            if (to != null) to.SetActive(true);
+            _waiting = NewPanel("Waiting");
+
+            var head = Ui.NewText("Head", _waiting.transform, 30);
+            if (head != null)
+            {
+                head.text = "IN ATTESA DI GIOCATORI";
+                head.color = Ink;
+                Ui.Place(head.rectTransform, 0f, 160f, 900f, 50f);
+            }
+
+            _waitCount = Ui.NewText("Count", _waiting.transform, 68);
+            if (_waitCount != null)
+            {
+                _waitCount.color = Ink;
+                Ui.Place(_waitCount.rectTransform, 0f, 95f, 900f, 90f);
+            }
+
+            _waitCode = Ui.NewText("Code", _waiting.transform, 34);
+            if (_waitCode != null)
+            {
+                _waitCode.color = Primary;
+                Ui.Place(_waitCode.rectTransform, 0f, 25f, 900f, 50f);
+            }
+
+            _waitClock = Ui.NewText("Clock", _waiting.transform, 30);
+            if (_waitClock != null)
+            {
+                _waitClock.color = Ink;
+                Ui.Place(_waitClock.rectTransform, 0f, -25f, 900f, 44f);
+            }
+
+            Button(_waiting.transform, "ABBANDONA", 0f, -240f, Secondary, Color.white,
+                   () => { var a = _onAbandon; _onAbandon = null; a?.Invoke(); }, 340f, 64f);
+        }
+
+        void Only(GameObject panel)
+        {
+            if (_home != null) _home.SetActive(panel == _home);
+            if (_modes != null) _modes.SetActive(panel == _modes);
+            if (_friends != null) _friends.SetActive(panel == _friends);
+            if (_waiting != null) _waiting.SetActive(panel == _waiting);
         }
 
         void GoHome()
         {
-            if (_home != null) _home.SetActive(true);
-            if (_modes != null) _modes.SetActive(false);
-            if (_friends != null) _friends.SetActive(false);
+            Only(_home);
             if (_hint != null) _hint.text = "";
         }
 
@@ -174,8 +238,8 @@ namespace KongBall
         }
 
         // The menu is torn down only once the launcher has ACCEPTED. Hiding regardless left the
-        // player looking at the empty pitch with no menu and no match whenever the launcher refused
-        // — which it does whenever a start is already in flight.
+        // player looking at nothing whenever the launcher refused — which it does whenever a start is
+        // already in flight.
         static void Launch(System.Func<bool> start)
         {
             if (NetLauncher.Instance == null)
@@ -204,31 +268,7 @@ namespace KongBall
             return sb.ToString();
         }
 
-        // A single button on its own canvas, for use outside the menu — the waiting room needs a way
-        // out, and waiting alone in a room nobody joins was otherwise another dead end. Caller owns
-        // the returned object and destroys it.
-        public static GameObject Overlay(string label, UnityEngine.Events.UnityAction onClick)
-        {
-            var go = new GameObject("Overlay_" + label);
-            Ui.NewOverlayCanvas(go, SortingOrder - 100);
-
-            var img = Ui.NewImage("Btn", go.transform);
-            img.color = Quiet;
-            var rt = img.rectTransform;
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 1f);
-            rt.sizeDelta = new Vector2(300f, 72f);
-            rt.anchoredPosition = new Vector2(0f, -60f);
-
-            var btn = img.gameObject.AddComponent<Button>();
-            btn.targetGraphic = img;
-            btn.onClick.AddListener(onClick);
-
-            var t = Ui.NewText("Text", img.transform, 30);
-            if (t != null) { t.text = label; t.color = Color.white; Ui.Stretch(t.rectTransform); }
-            return go;
-        }
-
-        // --- tiny UI helpers ---------------------------------------------------------------------
+        // --- menu-specific widgets ---------------------------------------------------------------
 
         GameObject NewPanel(string name)
         {
@@ -257,23 +297,23 @@ namespace KongBall
         {
             var img = Ui.NewImage(name, parent);
             img.color = Field;
-            Ui.Place(img.rectTransform, x, y, width, 88f);
+            Ui.Place(img.rectTransform, x, y, width, 76f);
 
-            var text = Ui.NewText("Text", img.transform, 44);
+            var text = Ui.NewText("Text", img.transform, 40);
             if (text == null) return null;
             text.supportRichText = false;
-            text.color = Color.white;
+            text.color = Ink;
             var trt = text.rectTransform;
             trt.anchorMin = Vector2.zero;
             trt.anchorMax = Vector2.one;
             trt.offsetMin = new Vector2(16f, 0f);
             trt.offsetMax = new Vector2(-16f, 0f);
 
-            var placeholder = Ui.NewText("Placeholder", img.transform, 40);
+            var placeholder = Ui.NewText("Placeholder", img.transform, 36);
             if (placeholder != null)
             {
                 placeholder.text = "CODICE";
-                placeholder.color = new Color(0.45f, 0.52f, 0.49f);
+                placeholder.color = new Color(0.55f, 0.52f, 0.45f);
                 Ui.Stretch(placeholder.rectTransform);
             }
 
@@ -292,6 +332,5 @@ namespace KongBall
             });
             return input;
         }
-
     }
 }
