@@ -49,7 +49,15 @@ namespace KongBall
             string b = null;
             var ph = mc.CurPhase;
 
-            if (ph == MatchController.Phase.Countdown)
+            // The waiting room has to say what it is waiting for. An empty pitch with a frozen player
+            // and no message is indistinguishable from a bug.
+            if (ph == MatchController.Phase.Waiting)
+            {
+                b = "IN ATTESA DI GIOCATORI  " + mc.Seated + "/" + Mathf.Max(2, mc.Seats);
+                var nl = NetLauncher.Instance;
+                if (nl != null && nl.RoomCode != null) b += "\nCODICE  " + nl.RoomCode;
+            }
+            else if (ph == MatchController.Phase.Countdown)
             {
                 int c = Mathf.Clamp(Mathf.CeilToInt(mc.PhaseTimer), 1, 3);
                 b = c.ToString();
