@@ -74,8 +74,9 @@ namespace KongBall
         int _lastSeated = -1;
         string _notice;               // shown once we are back on the menu, instead of silently landing there
         bool _starting;               // inside the awaited StartGame, which reports its own failure
+        bool _leaving;                // shutdown asked for; stop driving the waiting screen
+        bool _waitingShown;
         ConnectingScreen _screen;
-        GameObject _abandon;
 
         // Seconds left before giving up on the waiting room, or -1 when not waiting. Local on
         // purpose: it measures how long THIS player has been waiting, which is what runs out of
@@ -142,6 +143,7 @@ namespace KongBall
             RoomCode = code;
             _leaveAt = 0f;
             _notice = null;
+            _waitingShown = false;
             _screen = ConnectingScreen.Show(message);
             _ = StartShared(visible, mayCreate);
             return true;
@@ -216,16 +218,16 @@ namespace KongBall
 
         public void LeaveMatch()
         {
-            // The button goes first: shutdown is asynchronous, so leaving it on screen invites a
-            // second tap that shuts an already-shutting-down runner down again.
-            if (_abandon != null) { Destroy(_abandon); _abandon = null; }
-            if (_runner == null) { MainMenu.Show(); return; }
+            // Latched before anything else: shutdown is asynchronous, and without this the waiting
+            // screen would be redrawn — button and all — for every frame until the callback lands.
+            if (_leaving) return;
+            _leaving = true;
+            if (_runner == null) { MainMenu.Show(); _leaving = false; return; }
             _runner.Shutdown();   // OnShutdown puts us back on the menu
         }
 
         void TearDownRunner()
         {
-            if (_abandon != null) { Destroy(_abandon); _abandon = null; }
             if (_runner == null) return;
             if (_runner.gameObject != null) Destroy(_runner.gameObject);
             _runner = null;
@@ -303,10 +305,13 @@ namespace KongBall
             EnsureMatchObjects(_runner);
         }
 
-        // Waiting for players has to be escapable. A quick match nobody else joins, or a friend who
-        // never types the code, would otherwise trap the player in an empty arena for good.
+        // The waiting room is a screen of its own, not a caption over the live pitch: MenuStage keeps
+        // the match off screen until it actually starts. And it has to be escapable — a quick match
+        // nobody joins, or a friend who never types the code, would otherwise trap the player there.
         void WatchWaitingRoom()
         {
+            if (_leaving) return;
+
             var mc = MatchController.Instance;
 
             // Joining by code does not pick a mode — the room already has one. Adopt it, so that if
@@ -319,17 +324,35 @@ namespace KongBall
 
             // No controller yet counts as waiting, deliberately. It is the master's job to spawn one,
             // and if that never happens the player would otherwise sit in an empty arena with no
-            // banner, no ABBANDONA and no timeout — the exact dead end this was meant to remove.
+            // screen, no way out and no timeout — the exact dead end this was meant to remove.
             bool waiting = mc == null || mc.CurPhase == MatchController.Phase.Waiting;
-            if (waiting && _abandon == null) _abandon = MainMenu.Overlay("ABBANDONA", LeaveMatch);
-            else if (!waiting && _abandon != null) { Destroy(_abandon); _abandon = null; }
 
-            if (!waiting) { _waitUntil = 0f; _lastSeated = -1; return; }
+            if (!waiting)
+            {
+                // Kick-off: the menu comes down, the backdrop with it, and the HUD comes back.
+                // Unconditionally, not only when we showed the waiting screen ourselves: with two
+                // players pressing GIOCA at the same moment, the room can fill while this one is
+                // still on the connecting overlay, and a guard here would leave the backdrop up for
+                // the whole match. Both calls are no-ops when there is nothing to hide.
+                MainMenu.Hide();
+                MenuStage.Hide();
+                _waitingShown = false;
+                _waitUntil = 0f;
+                _lastSeated = -1;
+                return;
+            }
 
             // Somebody arriving is progress, so the clock starts again. Otherwise a room that fills
             // up slowly would throw out the player who had the patience to wait for it.
             int seated = mc != null ? mc.Seated : 0;
             if (seated != _lastSeated) { _lastSeated = seated; _waitUntil = Time.time + waitTimeoutSeconds; }
+
+            // Only once the connecting overlay is done, so the two screens do not fight over the top.
+            if (_screen == null)
+            {
+                if (!_waitingShown) { MainMenu.ShowWaiting(LeaveMatch); _waitingShown = true; }
+                MainMenu.SetWaiting(seated, mc != null ? mc.Seats : (int)Mode, RoomCode, WaitRemaining);
+            }
 
             if (Time.time >= _waitUntil)
             {
@@ -399,10 +422,15 @@ namespace KongBall
 
             TearDownRunner();
             _started = false;
+            _leaving = false;
+            _waitingShown = false;
             _leaveAt = 0f;
             _waitUntil = 0f;
             _lastSeated = -1;
             if (_screen != null) { _screen.Hide(); _screen = null; }
+
+            // Backdrop first: whatever we show next must not have the abandoned pitch behind it.
+            MenuStage.Show();
 
             if (_notice != null)
             {
