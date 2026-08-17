@@ -154,20 +154,28 @@ jobs:
           </dict></plist>
           PLIST
 
-          # CODE_SIGN_IDENTITY is pinned to distribution on purpose. Unity generates the target with
-          # "iPhone Developer", so the archive asked for a DEVELOPMENT identity even though the export
-          # re-signs for the App Store straight afterwards. With -allowProvisioningUpdates that made
-          # Xcode mint a new development certificate on every fresh runner, and Apple caps those at two
-          # per account: run 22 failed with "Your account has reached the maximum number of
-          # certificates". Archiving with the distribution certificate we already import means nothing
-          # has to be created at all.
+          # The archive is built UNSIGNED, and exportArchive below signs the result for the App Store.
+          #
+          # Why: Unity generates the target with automatic signing and a development identity, so the
+          # archive needed a development signing identity of its own — one Xcode had to create from
+          # scratch on every fresh runner, because the keychain only holds the distribution
+          # certificate. Apple caps development certificates at two per account, which is what failed
+          # run 22 ("Your account has reached the maximum number of certificates") after runs 20 and
+          # 21 had quietly used up both slots.
+          #
+          # Overriding CODE_SIGN_IDENTITY instead does not work, and run 23 is the proof: automatic
+          # signing resolves everything to development and rejects the override outright — "Unity-iPhone
+          # is automatically signed for development, but a conflicting code signing identity Apple
+          # Distribution has been manually specified".
+          #
+          # Not signing the archive at all sidesteps the question: nothing is created on Apple's side,
+          # and the only signature that ships is the one exportArchive applies with the certificate we
+          # already import. Provisioning profiles, unlike certificates, are not capped.
           xcodebuild -project Unity-iPhone.xcodeproj -scheme Unity-iPhone \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
-            -archivePath "$ARCH" -allowProvisioningUpdates \
-            -authenticationKeyPath "$P8" -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="${TEAM_ID}" \
-            CODE_SIGN_IDENTITY="Apple Distribution" archive
+            -archivePath "$ARCH" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_ENTITLEMENTS="" \
+            DEVELOPMENT_TEAM="${TEAM_ID}" archive
 
           xcodebuild -exportArchive -archivePath "$ARCH" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
