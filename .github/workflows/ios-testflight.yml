@@ -154,12 +154,20 @@ jobs:
           </dict></plist>
           PLIST
 
+          # CODE_SIGN_IDENTITY is pinned to distribution on purpose. Unity generates the target with
+          # "iPhone Developer", so the archive asked for a DEVELOPMENT identity even though the export
+          # re-signs for the App Store straight afterwards. With -allowProvisioningUpdates that made
+          # Xcode mint a new development certificate on every fresh runner, and Apple caps those at two
+          # per account: run 22 failed with "Your account has reached the maximum number of
+          # certificates". Archiving with the distribution certificate we already import means nothing
+          # has to be created at all.
           xcodebuild -project Unity-iPhone.xcodeproj -scheme Unity-iPhone \
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
             -archivePath "$ARCH" -allowProvisioningUpdates \
             -authenticationKeyPath "$P8" -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="${TEAM_ID}" archive
+            CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="${TEAM_ID}" \
+            CODE_SIGN_IDENTITY="Apple Distribution" archive
 
           xcodebuild -exportArchive -archivePath "$ARCH" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
