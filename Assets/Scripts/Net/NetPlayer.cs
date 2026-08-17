@@ -33,6 +33,7 @@ namespace KongBall
         public float grabMoveMultiplier = 0.4f; // grabber can still shuffle slowly while holding
 
         [Networked] public int NetTeam { get; set; }        // 0 = Blue, 1 = Red
+        [Networked] public bool TeamAssigned { get; set; }  // false until the master hands out a side
         [Networked] TickTimer StumbleUntil { get; set; }    // knocked-back / no control window
         [Networked] TickTimer HeldUntil { get; set; }       // grabbed / rooted in place
         [Networked] TickTimer GrabbingUntil { get; set; }   // I am actively grabbing someone
@@ -439,6 +440,17 @@ namespace KongBall
             _horizVel = Vector3.zero; _vY = 0f;
             _grounded = false;   // let the next tick re-detect it instead of assuming the old value
             StumbleUntil = default;
+        }
+
+        // Sides are decided by the master now that matchmaking replaced the blue/red buttons, but only
+        // this peer may write its own networked state — so the master asks and we do it. Re-seating is
+        // the point: we spawned on the blue half before anyone knew which side was ours.
+        public void ApplyTeam(int team)
+        {
+            if (!HasStateAuthority) return;
+            NetTeam = team;
+            TeamAssigned = true;
+            ResetToSpawn();
         }
 
         // Executed on the TARGET's authority: apply knockback + stumble to itself.

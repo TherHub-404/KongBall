@@ -6,9 +6,22 @@ using UnityEngine;
 
 namespace KongBall
 {
-    // Bootstrap: starts a Fusion NetworkRunner in Shared Mode, joins a fixed
-    // session, and spawns one player per client. Each client owns (StateAuthority) its own
-    // player; NetPlayer moves it and NetworkTransform replicates to everyone else.
+    // Bootstrap: starts a Fusion NetworkRunner in Shared Mode and spawns one player per client.
+    // Each client owns (StateAuthority) its own player; NetPlayer moves it and NetworkTransform
+    // replicates to everyone else.
+    //
+    // Two ways into a match, and they are the SAME Fusion call with different arguments:
+    //
+    //   quick match   SessionName = null  -> Fusion documents this as "random session matching", and
+    //                                        it lands on JoinRandomOrCreateRoom: the server puts you
+    //                                        in a matching room or makes one. IsVisible = true.
+    //   private room  SessionName = code  -> IsVisible = false, which Photon excludes from random
+    //                                        matchmaking ("simulate private rooms"), so a code is
+    //                                        the only way in.
+    //
+    // The mode travels as a session property, which doubles as the matchmaking filter — filters are
+    // exact-match, so a 1v1 player can never be dropped into a 2v2 room. PlayerCount carries the
+    // same number, so the room's size and the filter cannot disagree.
     public class NetLauncher : MonoBehaviour, INetworkRunnerCallbacks
     {
         [Header("Prefab (must have NetworkObject + NetworkTransform + NetPlayer)")]
@@ -21,74 +34,205 @@ namespace KongBall
         public NetworkObject matchPrefab;
 
         [Header("Session")]
-        public string sessionName = "kongball";
-        public int maxPlayers = 6;
         public bool autoStart = false;
+        public MatchMode autoStartMode = MatchMode.OneVsOne;
 
-        [Header("Team select UI (hidden after choosing)")]
-        public GameObject teamPanel;
+        [Tooltip("Seconds on the result screen before returning to the menu.")]
+        public float postMatchSeconds = 6f;
+
+        [Tooltip("How long to wait for the room to fill before giving up and going back to the menu. " +
+                 "Restarts whenever somebody joins, so a room that is filling up is never abandoned.")]
+        public float waitTimeoutSeconds = 120f;
 
         [Tooltip("Grace period after joining before the master may spawn missing shared objects, so " +
                  "objects already in the room have time to replicate first.")]
         public float settleSeconds = 3f;
 
+        [Header("Legacy scene UI — the blue/red panel, now replaced by MainMenu")]
+        public GameObject teamPanel;
+
+        // Bumped whenever the netcode changes in a way that makes old and new clients incompatible.
+        // Travels as a matchmaking filter, so mismatched builds simply never meet instead of meeting
+        // and misbehaving. This is NOT the build number: that would split the population every build.
+        public const int ProtocolVersion = 1;
+
+        const string ModeKey = "m";
+        const string ProtocolKey = "v";
+
+        public static NetLauncher Instance { get; private set; }
+
+        public MatchMode Mode { get; private set; } = MatchMode.OneVsOne;
+        public int RequiredPlayers => (int)Mode;
+        public string RoomCode { get; private set; }      // null for a quick match
+
         NetworkRunner _runner;
-        Team _chosenTeam = Team.Blue;
         bool _started;
         float _ensureCooldown;
         float _settleUntil;
+        float _leaveAt;
+        float _waitUntil;
+        int _lastSeated = -1;
+        string _notice;               // shown once we are back on the menu, instead of silently landing there
+        bool _starting;               // inside the awaited StartGame, which reports its own failure
         ConnectingScreen _screen;
+        GameObject _abandon;
 
-        async void Start()
+        // Seconds left before giving up on the waiting room, or -1 when not waiting. Local on
+        // purpose: it measures how long THIS player has been waiting, which is what runs out of
+        // patience — not how long the room has existed.
+        public float WaitRemaining => _waitUntil > 0f ? Mathf.Max(0f, _waitUntil - Time.time) : -1f;
+
+        void Awake()
         {
-            if (autoStart) await StartShared();
+            Instance = this;
         }
 
-        // Wired to the BLU (0) / ROSSO (1) buttons on the team-select panel.
-        public void SelectTeamAndStart(int team)
+        void OnDestroy()
         {
-            if (_started) return;
-            _started = true;
-            _chosenTeam = (Team)team;
+            if (Instance == this) Instance = null;
+        }
+
+        void Start()
+        {
+            // The old team-select panel still lives in the scene. It cannot be deleted from outside
+            // the Editor, so it is switched off here instead — and its buttons are unreachable.
             if (teamPanel != null) teamPanel.SetActive(false);
-            _screen = ConnectingScreen.Show("CONNESSIONE");
-            _ = StartShared();
+
+            if (autoStart) StartQuickMatch(autoStartMode);
+            else MainMenu.Show();
         }
 
-        public async System.Threading.Tasks.Task StartShared()
+        // --- the three ways in -------------------------------------------------------------------
+
+        public bool StartQuickMatch(MatchMode mode)
+        {
+            return Begin(mode, null, true, true, "CERCO UNA PARTITA");
+        }
+
+        public bool CreatePrivateMatch(MatchMode mode)
+        {
+            string code = MainMenu.NewCode();
+            return Begin(mode, code, false, true, "STANZA " + code);
+        }
+
+        // The mode comes from whoever created the room, so joining does not choose one.
+        //
+        // Note the version does NOT protect this path the way it protects matchmaking: session
+        // properties are filters only for a RANDOM join, and joining by name ignores them. That is
+        // why the protocol version is baked into the session name instead — an old build looking for
+        // the same four letters is looking for a different room.
+        public bool JoinPrivateMatch(string code)
+        {
+            return Begin(Mode, MainMenu.Normalise(code), false, false, "ENTRO NELLA STANZA " + code);
+        }
+
+        // The room a code stands for. Two builds that disagree about the netcode must not be able to
+        // reach each other's rooms even with the right code.
+        static string SessionFor(string code)
+        {
+            return code == null ? null : "v" + ProtocolVersion + "-" + code;
+        }
+
+        bool Begin(MatchMode mode, string code, bool visible, bool mayCreate, string message)
+        {
+            if (_started) return false;
+            if (code != null && code.Length != MainMenu.CodeLength) return false;
+            _started = true;
+            Mode = mode;
+            RoomCode = code;
+            _leaveAt = 0f;
+            _notice = null;
+            _screen = ConnectingScreen.Show(message);
+            _ = StartShared(visible, mayCreate);
+            return true;
+        }
+
+        async System.Threading.Tasks.Task StartShared(bool visible, bool mayCreate)
         {
             if (_runner != null) return;
-            _runner = gameObject.AddComponent<NetworkRunner>();
-            _runner.ProvideInput = true;
 
+            // The runner lives on its own GameObject so that shutting it down cannot take this
+            // launcher with it — we need to survive a match to get back to the menu.
+            var host = new GameObject("NetworkRunner");
+            _runner = host.AddComponent<NetworkRunner>();
+            _runner.ProvideInput = true;
+            _runner.AddCallbacks(this);
+
+            var props = new Dictionary<string, SessionProperty>
+            {
+                { ModeKey, (int)Mode },
+                { ProtocolKey, ProtocolVersion },
+            };
+
+            // MatchmakingMode is left at its default, FillRoom, which the SDK documents as making
+            // "most sense with MaxPlayers > 0 and games that can only start with more players" —
+            // exactly this game: it packs players into the oldest room instead of scattering them
+            // one per room, which is what would leave everybody waiting alone.
+            _starting = true;
             var result = await _runner.StartGame(new StartGameArgs
             {
                 GameMode = GameMode.Shared,
-                SessionName = sessionName,
-                PlayerCount = maxPlayers,
+                SessionName = SessionFor(RoomCode),
+                PlayerCount = (int)Mode,
+                SessionProperties = props,
+                IsVisible = visible,
+                IsOpen = true,
+                EnableClientSessionCreation = mayCreate,
             });
 
+            _starting = false;
             if (result.Ok)
             {
-                Debug.Log("[Net] Connected (Shared)");
-                if (_screen != null) _screen.SetMessage("ENTRO IN PARTITA");
+                Debug.Log("[Net] joined session '" + (_runner.SessionInfo != null ? _runner.SessionInfo.Name : "?")
+                          + "' mode=" + Mode + " visible=" + visible);
+                if (_screen != null) _screen.SetMessage(RoomCode != null ? "STANZA " + RoomCode : "ENTRO IN PARTITA");
                 return;
             }
 
-            // Without this the player was stuck for good: _started stayed true, so the team buttons
-            // did nothing and there was no way back.
+            // Without this the player was stuck for good: _started stayed true, so there was no way
+            // back to the menu.
             Debug.LogWarning("[Net] StartGame FAILED: " + result.ShutdownReason);
-            Destroy(_runner);
-            _runner = null;
+            TearDownRunner();
             _started = false;
-            if (_screen != null) _screen.ShowError("CONNESSIONE FALLITA\n" + result.ShutdownReason, ReopenTeamSelect);
-            _screen = null;   // the error screen owns itself until the player retries
+            if (_screen != null) _screen.ShowError(FailureText(result.ShutdownReason), MainMenu.Show);
+            _screen = null;   // the error screen owns itself until the player taps through
         }
 
-        void ReopenTeamSelect()
+        // Joining by code has three failures a player can actually act on, and "CONNESSIONE FALLITA"
+        // tells them none of them apart.
+        string FailureText(ShutdownReason reason)
         {
-            if (teamPanel != null) teamPanel.SetActive(true);
+            if (RoomCode != null)
+            {
+                if (reason == ShutdownReason.GameNotFound)
+                    return "NESSUNA STANZA CON IL CODICE\n" + RoomCode;
+                if (reason == ShutdownReason.GameClosed)
+                    return "LA PARTITA E' GIA' INIZIATA";
+                if (reason == ShutdownReason.GameIsFull)
+                    return "LA STANZA E' PIENA";
+            }
+            return "CONNESSIONE FALLITA\n" + reason;
         }
+
+        public void LeaveMatch()
+        {
+            // The button goes first: shutdown is asynchronous, so leaving it on screen invites a
+            // second tap that shuts an already-shutting-down runner down again.
+            if (_abandon != null) { Destroy(_abandon); _abandon = null; }
+            if (_runner == null) { MainMenu.Show(); return; }
+            _runner.Shutdown();   // OnShutdown puts us back on the menu
+        }
+
+        void TearDownRunner()
+        {
+            if (_abandon != null) { Destroy(_abandon); _abandon = null; }
+            if (_runner == null) return;
+            if (_runner.gameObject != null) Destroy(_runner.gameObject);
+            _runner = null;
+            _settleUntil = 0f;
+        }
+
+        // --- spawning ----------------------------------------------------------------------------
 
         public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
         {
@@ -97,21 +241,18 @@ namespace KongBall
             EnsureMatchObjects(runner);
         }
 
+        // No team is chosen here any more. Six players all picking blue is the reason: with
+        // matchmaking the sides have to be balanced by the room, so MatchController assigns a team
+        // and the player re-seats itself when it arrives.
         void SpawnLocalPlayer(NetworkRunner runner, PlayerRef player)
         {
-            bool blue = _chosenTeam == Team.Blue;
-            float x = blue ? -6f : 6f;
-            float z = ((player.PlayerId % 3) - 1) * 3f; // spread teammates along z
-            // Same clearance reasoning as NetPlayer.ResetToSpawn: drop in from a real height rather
-            // than starting the capsule a few centimetres off the floor.
-            Vector3 pos = new Vector3(x, NetPlayer.SpawnHeight, z);
-            Quaternion rot = Quaternion.LookRotation(blue ? Vector3.right : Vector3.left, Vector3.up);
+            float z = ((player.PlayerId % 3) - 1) * 3f;
+            Vector3 pos = new Vector3(-6f, NetPlayer.SpawnHeight, z);
+            Quaternion rot = Quaternion.LookRotation(Vector3.right, Vector3.up);
 
             var no = runner.Spawn(playerPrefab, pos, rot, player);
-            var np = no != null ? no.GetComponent<NetPlayer>() : null;
-            if (np != null) np.NetTeam = (int)_chosenTeam;
             if (no != null) runner.SetPlayerObject(player, no); // the ball looks players up by PlayerRef
-            Debug.Log("[Net] Spawned local player team=" + _chosenTeam + " at " + pos);
+            Debug.Log("[Net] spawned local player, awaiting team assignment");
         }
 
         // The master owns the shared objects. This used to live inside the local-player branch of
@@ -153,10 +294,60 @@ namespace KongBall
                 _screen = null;
             }
 
+            WatchWaitingRoom();
+            WatchForMatchEnd();
+
             _ensureCooldown -= Time.deltaTime;
             if (_ensureCooldown > 0f) return;
             _ensureCooldown = 1f;
             EnsureMatchObjects(_runner);
+        }
+
+        // Waiting for players has to be escapable. A quick match nobody else joins, or a friend who
+        // never types the code, would otherwise trap the player in an empty arena for good.
+        void WatchWaitingRoom()
+        {
+            var mc = MatchController.Instance;
+
+            // Joining by code does not pick a mode — the room already has one. Adopt it, so that if
+            // this peer later becomes master its idea of the match size is the room's, not the
+            // default it happened to start with. Only a real seat count is adopted: a stray value
+            // would cast into a MatchMode that means nothing.
+            if (RoomCode != null && mc != null
+                && (mc.Seats == (int)MatchMode.OneVsOne || mc.Seats == (int)MatchMode.TwoVsTwo))
+                Mode = (MatchMode)mc.Seats;
+
+            // No controller yet counts as waiting, deliberately. It is the master's job to spawn one,
+            // and if that never happens the player would otherwise sit in an empty arena with no
+            // banner, no ABBANDONA and no timeout — the exact dead end this was meant to remove.
+            bool waiting = mc == null || mc.CurPhase == MatchController.Phase.Waiting;
+            if (waiting && _abandon == null) _abandon = MainMenu.Overlay("ABBANDONA", LeaveMatch);
+            else if (!waiting && _abandon != null) { Destroy(_abandon); _abandon = null; }
+
+            if (!waiting) { _waitUntil = 0f; _lastSeated = -1; return; }
+
+            // Somebody arriving is progress, so the clock starts again. Otherwise a room that fills
+            // up slowly would throw out the player who had the patience to wait for it.
+            int seated = mc != null ? mc.Seated : 0;
+            if (seated != _lastSeated) { _lastSeated = seated; _waitUntil = Time.time + waitTimeoutSeconds; }
+
+            if (Time.time >= _waitUntil)
+            {
+                _notice = RoomCode != null ? "NESSUNO SI E' UNITO ALLA STANZA\n" + RoomCode
+                                           : "NESSUN AVVERSARIO TROVATO";
+                Debug.Log("[Net] waiting room timed out after " + waitTimeoutSeconds + "s");
+                LeaveMatch();
+            }
+        }
+
+        // A finished match used to be a dead end: the phase stayed Finished and nothing else ever
+        // happened. Each client leaves on its own clock — this is presentation, not shared state.
+        void WatchForMatchEnd()
+        {
+            var mc = MatchController.Instance;
+            if (mc == null || mc.CurPhase != MatchController.Phase.Finished) { _leaveAt = 0f; return; }
+            if (_leaveAt <= 0f) { _leaveAt = Time.time + postMatchSeconds; return; }
+            if (Time.time >= _leaveAt) { _leaveAt = 0f; LeaveMatch(); }
         }
 
         public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
@@ -170,6 +361,10 @@ namespace KongBall
         // unsimulated. The master takes them over. Mirrors the OnPlayerLeft handler in Photon's
         // Pirate Adventure sample: anything Fusion already handles, or that we are not allowed to
         // take, is skipped.
+        //
+        // Since the ball and the MatchController are Master Client Objects, Fusion migrates both and
+        // this now skips them on the first check. It stays because it is the safety net for anything
+        // else that ends up owned by a peer who leaves.
         static void ReclaimOrphans(NetworkRunner runner, PlayerRef gone)
         {
             _orphanScratch.Clear();
@@ -190,12 +385,47 @@ namespace KongBall
             _orphanScratch.Clear();
         }
 
+        // The single way out of a match, whatever ended it: the final whistle, a timed-out waiting
+        // room, ABBANDONA, or a connection that simply dropped. All of them should leave the player
+        // somewhere they can act instead of in a frozen world.
+        public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
+        {
+            Debug.Log("[Net] shutdown: " + shutdownReason);
+
+            // A StartGame that fails shuts the runner down from inside the await, so this fires while
+            // StartShared is still holding the result. Presenting here as well would stack a menu
+            // under the failure screen; StartShared reports that case itself.
+            if (_starting) return;
+
+            TearDownRunner();
+            _started = false;
+            _leaveAt = 0f;
+            _waitUntil = 0f;
+            _lastSeated = -1;
+            if (_screen != null) { _screen.Hide(); _screen = null; }
+
+            if (_notice != null)
+            {
+                // Say why, rather than dropping the player on the menu with no explanation.
+                ConnectingScreen.Show(_notice).ShowError(_notice, MainMenu.Show);
+                _notice = null;
+                return;
+            }
+            MainMenu.Show();
+        }
+
+        // Presentation is left to OnShutdown, which Fusion calls next: handling it in both places is
+        // what would stack two screens on top of each other.
+        public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
+        {
+            Debug.LogWarning("[Net] disconnected: " + reason);
+            _notice = "CONNESSIONE PERSA\n" + reason;
+        }
+
         static readonly List<NetworkObject> _orphanScratch = new List<NetworkObject>();
         public void OnInput(NetworkRunner runner, NetworkInput input) { }
         public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
-        public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) { }
         public void OnConnectedToServer(NetworkRunner runner) { }
-        public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason) { }
         public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
         public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) { }
         public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
