@@ -361,6 +361,10 @@ namespace KongBall
         // unsimulated. The master takes them over. Mirrors the OnPlayerLeft handler in Photon's
         // Pirate Adventure sample: anything Fusion already handles, or that we are not allowed to
         // take, is skipped.
+        //
+        // Since the ball and the MatchController are Master Client Objects, Fusion migrates both and
+        // this now skips them on the first check. It stays because it is the safety net for anything
+        // else that ends up owned by a peer who leaves.
         static void ReclaimOrphans(NetworkRunner runner, PlayerRef gone)
         {
             _orphanScratch.Clear();
