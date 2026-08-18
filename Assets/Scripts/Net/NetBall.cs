@@ -44,7 +44,10 @@ namespace KongBall
         public float goalLineX = 21.5f;  // x the ball must cross to score
         public float goalHeight = 3.0f;  // max y that still counts
 
-        [Networked] public PlayerRef Owner { get; set; }
+        // WHICH OBJECT holds the ball, not which person. It used to be a PlayerRef, which quietly
+        // meant "only something with a network connection can ever carry the ball" — so a bot, which
+        // has no PlayerRef and sends no RPCs, could not have touched it. Zero = free ball.
+        [Networked] public int OwnerId { get; set; }
         // Bumped on EVERY possession change. Fusion's eventual consistency can collapse a value
         // that flips back and forth (A -> None -> A) into no change at all, so presentation reacts
         // to this counter, never to a transition of Owner itself.
@@ -154,9 +157,9 @@ namespace KongBall
             // it directly: no request, no authority handoff, no window in which two peers disagree.
             UpdatePossession();
 
-            if (Owner != PlayerRef.None)
+            if (OwnerId != 0)
             {
-                var op = GetPlayer(Owner);
+                var op = GetPlayer(OwnerId);
                 if (op != null)
                 {
                     // Tight dribble toward a point led out in front of the carrier.
@@ -214,11 +217,11 @@ namespace KongBall
 
             Vector3 truth = transform.position;
             bool predicting = !HasStateAuthority && !_localReleased
-                              && Owner != PlayerRef.None && Owner == Runner.LocalPlayer;
+                              && OwnerId != 0 && OwnerId == LocalPlayerId;
 
             if (predicting)
             {
-                var me = GetPlayer(Owner);
+                var me = GetPlayer(OwnerId);
                 if (me != null)
                 {
                     Vector3 anchor = me.transform.position + me.transform.forward * dribbleAhead;
@@ -262,9 +265,9 @@ namespace KongBall
         void UpdatePossession()
         {
             // Does the current carrier still hold it?
-            if (Owner != PlayerRef.None)
+            if (OwnerId != 0)
             {
-                var op = GetPlayer(Owner);
+                var op = GetPlayer(OwnerId);
                 if (op == null || op.IsStumbled || op.IsHeld
                     || FlatDist(op.transform.position, _rb.position) > loseDistance)
                 {
@@ -281,16 +284,17 @@ namespace KongBall
 
             // A free ball is taken at full radius. Taking it OFF someone needs the challenger to be
             // clearly closer (hysteresis), so two players jostling can't trade it every tick.
-            bool free = Owner == PlayerRef.None;
+            bool free = OwnerId == 0;
             float reach = free ? possessionRadius : possessionRadius * stealRadiusFactor;
 
             NetPlayer best = null;
             float bestD = float.MaxValue;
-            foreach (var p in Runner.ActivePlayers)
+            // NetPlayer.Live, not Runner.ActivePlayers: the second only lists people with a
+            // connection, so anything the master simulates on its own would never be a candidate.
+            foreach (var np in NetPlayer.Live)
             {
-                if (p == Owner) continue;
-                var np = GetPlayer(p);
-                if (np == null || np.IsStumbled || np.IsHeld) continue;
+                if (np == null || np.NetId == OwnerId) continue;
+                if (np.IsStumbled || np.IsHeld) continue;
                 float d = FlatDist(np.transform.position, _rb.position);
                 if (d < reach && d < bestD) { bestD = d; best = np; }
             }
@@ -298,17 +302,17 @@ namespace KongBall
 
             if (!free)
             {
-                var op = GetPlayer(Owner);
+                var op = GetPlayer(OwnerId);
                 // The carrier keeps it unless the challenger beats them by a real margin.
                 if (op != null && bestD > FlatDist(op.transform.position, _rb.position) - stealMargin) return;
             }
 
-            TakePossession(best.Object.StateAuthority);
+            TakePossession(best);
         }
 
-        void TakePossession(PlayerRef p)
+        void TakePossession(NetPlayer p)
         {
-            Owner = p;
+            OwnerId = p != null ? p.NetId : 0;
             PossessionSeq++;
             _dribbleVel = Vector3.zero;
             // Protect the new carrier briefly so possession doesn't thrash between two close players
@@ -320,15 +324,29 @@ namespace KongBall
 
         // Sent by the carrier's client. Only the authority actually shoots: the sender never writes
         // ball state. RpcInfo.Source is the real sender, so a client cannot kick on someone's behalf.
+        //
+        // The RPC only resolves WHO is asking and then hands over to Kick, which is also the entry
+        // point for anything the authority simulates itself. A bot has no client and sends no RPC, so
+        // without that split it would have had no way to shoot at all.
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
         public void RPC_Kick(Vector3 dir, float power01, RpcInfo info = default)
         {
-            if (Owner == PlayerRef.None || Owner != info.Source) return;  // not yours to kick
+            if (Runner == null) return;
+            if (!Runner.TryGetPlayerObject(info.Source, out var no) || no == null) return;
+            Kick(no.GetComponent<NetPlayer>(), dir, power01);
+        }
+
+        // Authority side. Refuses anyone who is not currently carrying the ball, whoever asked.
+        public void Kick(NetPlayer who, Vector3 dir, float power01)
+        {
+            if (!HasStateAuthority) return;
+            if (who == null || OwnerId == 0 || OwnerId != who.NetId) return;   // not yours to kick
+
             dir.y = 0f;
             if (dir.sqrMagnitude < 1e-4f) return;
             dir.Normalize();
 
-            Owner = PlayerRef.None;
+            OwnerId = 0;
             PossessionSeq++;
             _dribbleVel = Vector3.zero;
 
@@ -350,8 +368,8 @@ namespace KongBall
 
         void FreeBall(NetPlayer from)
         {
-            if (Owner == PlayerRef.None) return;
-            Owner = PlayerRef.None;
+            if (OwnerId == 0) return;
+            OwnerId = 0;
             PossessionSeq++;
             _dribbleVel = Vector3.zero;
             Vector3 away = from != null ? (_rb.position - from.transform.position) : Vector3.forward;
@@ -369,7 +387,7 @@ namespace KongBall
 
         void ResetToCentre()
         {
-            if (Owner != PlayerRef.None) { Owner = PlayerRef.None; PossessionSeq++; }
+            if (OwnerId != 0) { OwnerId = 0; PossessionSeq++; }
             _dribbleVel = Vector3.zero;
             StealLock = TickTimer.CreateFromSeconds(Runner, stealLockDuration);
             _rb.linearVelocity = Vector3.zero;
@@ -378,14 +396,30 @@ namespace KongBall
             transform.position = _rb.position;
         }
 
-        // Every client registers its own player object via Runner.SetPlayerObject at spawn
-        // (NetLauncher) and that association replicates, so any peer can resolve any player
-        // directly — no scene-wide search inside the simulation loop.
-        NetPlayer GetPlayer(PlayerRef p)
+        // Resolved against the live player list rather than Runner.TryGetPlayerObject, which can only
+        // answer for a PlayerRef. The list holds at most four entries, so the scan is cheaper than
+        // the dictionary lookup it replaces.
+        static NetPlayer GetPlayer(int id)
         {
-            if (p == PlayerRef.None || Runner == null) return null;
-            if (!Runner.TryGetPlayerObject(p, out var no) || no == null) return null;
-            return no.GetComponent<NetPlayer>();
+            if (id == 0) return null;
+            for (int i = 0; i < NetPlayer.Live.Count; i++)
+            {
+                var np = NetPlayer.Live[i];
+                if (np != null && np.NetId == id) return np;
+            }
+            return null;
+        }
+
+        // This peer's own player object, for the prediction check: "am I the one carrying it".
+        int LocalPlayerId
+        {
+            get
+            {
+                if (Runner == null) return 0;
+                if (!Runner.TryGetPlayerObject(Runner.LocalPlayer, out var no) || no == null) return 0;
+                var np = no.GetComponent<NetPlayer>();
+                return np != null ? np.NetId : 0;
+            }
         }
 
         static float FlatDist(Vector3 a, Vector3 b) { a.y = 0f; b.y = 0f; return Vector3.Distance(a, b); }

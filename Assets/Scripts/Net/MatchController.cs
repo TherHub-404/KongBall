@@ -275,11 +275,14 @@ namespace KongBall
         // Returns true when the match has just been decided, so the caller stops running the phase.
         bool TeamAbandoned()
         {
+            // HUMANS only, and over the live player list rather than Runner.ActivePlayers. Counting
+            // every player would mean that a side whose only human walked out keeps going because a
+            // bot is still standing there — a match playing itself with nobody watching. A side is
+            // out when nobody is left who chose to be there.
             int blue = 0, red = 0;
-            foreach (var p in Runner.ActivePlayers)
+            foreach (var np in NetPlayer.Live)
             {
-                var np = PlayerOf(p);
-                if (np == null || !np.TeamAssigned) continue;
+                if (np == null || np.IsBot || !np.TeamAssigned) continue;
                 if (np.NetTeam == (int)Team.Red) red++; else blue++;
             }
 
