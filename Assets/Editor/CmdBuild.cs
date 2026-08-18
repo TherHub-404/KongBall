@@ -37,6 +37,11 @@ namespace KongBall
         const string TeamId   = "9Z8F9Q282X";
 
         const string IconPath = "Assets/AppIcon/KongBallIcon1024.png";
+        const string LogoPath = "Assets/Resources/Menu/Logo.png";
+
+        // The same yellow as MenuStage.Background, so the launch screen and the menu behind it are one
+        // continuous colour instead of two different yellows meeting at a cut.
+        static readonly Color SplashYellow = new Color(0.97f, 0.78f, 0.24f);
 
         // Sets bundle id + signing team + app icon, then builds. Run headless via -executeMethod.
         public static void IOSConfigured()
@@ -46,11 +51,41 @@ namespace KongBall
             PlayerSettings.iOS.appleEnableAutomaticSigning = true; // manage in Xcode/xcodebuild at archive time
             // App icon is provided by the Apple Icon Composer .icon bundle (Assets/AppIcon/KongBall.icon)
             // via IOSIconComposerIcon post-processor. The legacy PNG SetupIcon() is intentionally skipped.
+            SetupSplashScreen();
             WireArtModels();
             EnsureGltfShadersIncluded();
             AssetDatabase.SaveAssets();
             Debug.LogFormat("CMDBUILD config bundle={0} team={1}", BundleId, TeamId);
             IOS();
+        }
+
+        // Launch screen: the KongBall wordmark on the menu's yellow, in place of the default dark grey
+        // "Made with Unity".
+        //
+        // Whether Unity's own logo can be dropped depends on the licence, and this build runs on
+        // Personal — historically that forced it on, and Unity 6 is the release that made it optional.
+        // Rather than depend on which is true here, the request is made and the result is logged: if it
+        // is honoured the launch screen is ours alone, and if it is not, DrawMode.UnityLogoBelow keeps
+        // our wordmark as the subject with Unity's mark underneath. Either way the background and the
+        // logo are ours, which is the part that was asked for.
+        static void SetupSplashScreen()
+        {
+            var logo = AssetDatabase.LoadAssetAtPath<Sprite>(LogoPath);
+            if (logo == null)
+            {
+                Debug.LogWarning("CMDBUILD splash: no sprite at " + LogoPath + " — leaving the splash alone");
+                return;
+            }
+
+            PlayerSettings.SplashScreen.show = true;              // we want a splash: ours
+            PlayerSettings.SplashScreen.showUnityLogo = false;    // granted or refused by the licence
+            PlayerSettings.SplashScreen.backgroundColor = SplashYellow;
+            PlayerSettings.SplashScreen.drawMode = PlayerSettings.SplashScreen.DrawMode.UnityLogoBelow;
+            PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Static;
+            PlayerSettings.SplashScreen.logos = new[] { PlayerSettings.SplashScreenLogo.Create(logo, 2f) };
+
+            Debug.LogFormat("CMDBUILD splash: logo set, unity logo requested off -> actually {0}",
+                            PlayerSettings.SplashScreen.showUnityLogo ? "STILL ON (licence)" : "off");
         }
 
         // Art models generated with Meshy are imported by glTFast as ScriptedImporter sub-assets,
