@@ -43,6 +43,10 @@ namespace KongBall
         // continuous colour instead of two different yellows meeting at a cut.
         static readonly Color SplashYellow = new Color(0.97f, 0.78f, 0.24f);
 
+        // How long the wordmark stays up. Unity will not go below two seconds, so this is the number
+        // to raise or lower if the launch screen feels rushed or slow.
+        const float SplashSeconds = 4f;
+
         // Sets bundle id + signing team + app icon, then builds. Run headless via -executeMethod.
         public static void IOSConfigured()
         {
@@ -83,7 +87,7 @@ namespace KongBall
             PlayerSettings.SplashScreen.drawMode = PlayerSettings.SplashScreen.DrawMode.UnityLogoBelow;
             PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Static;
             // Duration first, sprite second — Create(float, Sprite), not the other way round.
-            PlayerSettings.SplashScreen.logos = new[] { PlayerSettings.SplashScreenLogo.Create(2f, logo) };
+            PlayerSettings.SplashScreen.logos = new[] { PlayerSettings.SplashScreenLogo.Create(SplashSeconds, logo) };
 
             Debug.LogFormat("CMDBUILD splash: logo set, unity logo requested off -> actually {0}",
                             PlayerSettings.SplashScreen.showUnityLogo ? "STILL ON (licence)" : "off");
