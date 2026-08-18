@@ -82,7 +82,8 @@ namespace KongBall
             PlayerSettings.SplashScreen.backgroundColor = SplashYellow;
             PlayerSettings.SplashScreen.drawMode = PlayerSettings.SplashScreen.DrawMode.UnityLogoBelow;
             PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Static;
-            PlayerSettings.SplashScreen.logos = new[] { PlayerSettings.SplashScreenLogo.Create(logo, 2f) };
+            // Duration first, sprite second — Create(float, Sprite), not the other way round.
+            PlayerSettings.SplashScreen.logos = new[] { PlayerSettings.SplashScreenLogo.Create(2f, logo) };
 
             Debug.LogFormat("CMDBUILD splash: logo set, unity logo requested off -> actually {0}",
                             PlayerSettings.SplashScreen.showUnityLogo ? "STILL ON (licence)" : "off");
