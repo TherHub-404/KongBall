@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Fusion;
 using UnityEngine;
 
@@ -34,6 +35,7 @@ namespace KongBall
 
         [Networked] public int NetTeam { get; set; }        // 0 = Blue, 1 = Red
         [Networked] public bool TeamAssigned { get; set; }  // false until the master hands out a side
+        [Networked] public bool IsBot { get; set; }         // simulated by the master, no client behind it
         [Networked] TickTimer StumbleUntil { get; set; }    // knocked-back / no control window
         [Networked] TickTimer HeldUntil { get; set; }       // grabbed / rooted in place
         [Networked] TickTimer GrabbingUntil { get; set; }   // I am actively grabbing someone
@@ -50,6 +52,17 @@ namespace KongBall
         float _actionHeldTime;
         bool _grabFired;
         int _lastKickoffSeq = -1;
+
+        // Every player currently in the match, humans and bots alike. The ball used to find players
+        // through Runner.ActivePlayers, which by definition only knows about people with a
+        // connection: a bot would have been invisible to possession. One list, one rule, everybody.
+        public static readonly List<NetPlayer> Live = new List<NetPlayer>();
+
+        // Identity as the BALL sees it: the player object, not the person. Used instead of PlayerRef
+        // so that something without a PlayerRef can still carry the ball. NetworkId is the type
+        // Fusion provides for exactly this — "the unique identifier for a network entity" — and it
+        // cannot be confused with any other number the way a raw int can.
+        public NetworkId NetId => Object != null ? Object.Id : default;
 
         CharacterController _cc;
         LocalInputSource _input;
@@ -78,6 +91,8 @@ namespace KongBall
 
         public override void Spawned()
         {
+            if (!Live.Contains(this)) Live.Add(this);
+
             _cc = GetComponent<CharacterController>();
             var vis = transform.Find("Visual");
             _rend = vis != null ? vis.GetComponentInChildren<Renderer>() : GetComponentInChildren<Renderer>();
@@ -90,6 +105,19 @@ namespace KongBall
                 _input = UnityEngine.Object.FindAnyObjectByType<LocalInputSource>();
                 if (Camera.main != null) _cam = Camera.main.transform;
             }
+        }
+
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            Live.Remove(this);
+        }
+
+        // The list is static and this game leaves a match and starts another without reloading the
+        // scene, so an entry that outlived its object would be a ghost player in the next match.
+        // Despawned covers the normal path; this covers every other way an object can go.
+        void OnDestroy()
+        {
+            Live.Remove(this);
         }
 
         // Keep the colour in sync on remote clients once the networked team value arrives.
@@ -116,7 +144,7 @@ namespace KongBall
         void UpdateRing()
         {
             if (_ring == null) return;
-            bool mine = Ball != null && Ball.Owner == Object.StateAuthority;
+            bool mine = Ball != null && Ball.OwnerId == NetId;
             Color team = (NetTeam == 1) ? RedColor : BlueColor;
             Color c = team;
             if (mine)
@@ -131,7 +159,7 @@ namespace KongBall
         void UpdateAimLine()
         {
             if (_input == null || Ball == null) { HideAim(); return; }
-            bool mine = Ball.Owner == Object.StateAuthority;
+            bool mine = Ball.OwnerId == NetId;
             if (!(mine && _input.GetActionHeld())) { HideAim(); return; }
 
             Vector2 d = _input.GetAimDelta();
@@ -310,7 +338,7 @@ namespace KongBall
             // Possession is NOT claimed from here. The ball's authority decides it by proximity
             // (NetBall.UpdatePossession) and we simply read the result — no client ever writes ball
             // state, which is what makes possession impossible to desync.
-            bool mine = Ball != null && Ball.Owner == Object.StateAuthority;
+            bool mine = Ball != null && Ball.OwnerId == NetId;
 
             if (mine)
             {
