@@ -63,6 +63,16 @@ namespace KongBall
             IOS();
         }
 
+        // The pull-request gate. Does nothing on purpose: Unity refuses to run -executeMethod when
+        // scripts have compiler errors and aborts batchmode with a non-zero exit code, so invoking any
+        // method at all is already a complete compile check — without building a player, touching an
+        // asset or needing a signing certificate.
+        public static void CompileOnly()
+        {
+            Debug.Log("CMDBUILD compile-only: scripts compiled");
+            EditorApplication.Exit(0);
+        }
+
         // Launch screen: the KongBall wordmark on the menu's yellow, in place of the default dark grey
         // "Made with Unity".
         //

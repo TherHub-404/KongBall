@@ -1,0 +1,83 @@
+name: PR check
+
+# Compiles the project on every pull request — the gate this repository did not have.
+#
+# Until now the only compiler in the loop was the TestFlight build: twenty minutes away, and running
+# only AFTER the merge. Two separate lots were broken that way, most recently by a two-argument call
+# with the arguments in the wrong order, which took a four-feature merge down with it.
+#
+# Deliberately NOT a build. No player, no signing, no upload. Unity refuses to run -executeMethod
+# when scripts have compiler errors and aborts batchmode non-zero, so invoking a method that does
+# nothing is already a complete compile check.
+#
+# macOS with the iOS module, matching the release workflow exactly: Assets/Editor/CmdBuild.cs uses
+# UnityEditor.iOS.Xcode, so a checker without that module would fail to compile code that is fine.
+# Matching the release environment is the whole point — a green check somewhere else proves nothing.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: pr-check-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true      # a new push supersedes the check still running on the old one
+
+jobs:
+  check:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Seconds, and no Unity involved. Every one of these is a mistake that actually shipped here:
+      # a script committed without its .meta, a duplicated GUID, a Resources.Load name with no asset
+      # behind it — which fails silently at runtime and looks like a missing model.
+      - name: Asset sanity
+        run: python3 .github/scripts/asset_sanity.py
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-iOS-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-iOS-
+            Library-
+
+      # Everything below needs the Unity credentials, which GitHub does not hand to a pull request
+      # opened from a fork. Skipped rather than failed there, so an outside contribution still gets
+      # the asset checks instead of a red tick nobody can act on.
+      - name: Install Unity
+        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: buildalon/unity-setup@v2
+        with:
+          version-file: 'ProjectSettings/ProjectVersion.txt'
+          build-targets: 'iOS'
+          architecture: 'arm64'
+          cache-installation: true
+
+      # Note: this activates the same Personal licence the release build uses. If a PR check and a
+      # TestFlight build ever overlap and the activation is refused, that is why — the fix is to
+      # serialise the two workflows on a shared concurrency group.
+      - name: Activate Unity license
+        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: buildalon/activate-unity-license@v2
+        with:
+          license: 'Personal'
+          username: ${{ secrets.UNITY_EMAIL }}
+          password: ${{ secrets.UNITY_PASSWORD }}
+
+      - name: Compile scripts
+        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_EDITOR_PATH"
+          # unity-setup may hand back the .app bundle rather than the executable inside it.
+          if [ -d "$UNITY" ]; then UNITY="$UNITY/Contents/MacOS/Unity"; fi
+
+          "$UNITY" -quit -batchmode -nographics \
+            -projectPath "$GITHUB_WORKSPACE" \
+            -executeMethod KongBall.CmdBuild.CompileOnly \
+            -logFile -
