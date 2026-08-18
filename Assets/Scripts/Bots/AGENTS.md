@@ -12,7 +12,7 @@ The rest of the codebase was shaped so a bot needs no special case anywhere. Kee
 | seam | contract |
 |---|---|
 | `NetPlayer.Live` | every player in the match, humans and bots. The ball picks candidates from here, never from `Runner.ActivePlayers` — that list only knows about peers with a connection. |
-| `NetBall.OwnerId` | identifies the player **object**, not the person. This is what lets something with no `PlayerRef` carry the ball. Zero means free. |
+| `NetBall.OwnerId` | a `NetworkId` identifying the player **object**, not the person. This is what lets something with no `PlayerRef` carry the ball. Invalid means free. Resolve it with `Runner.TryFindObject`, which answers for anything spawned — `TryGetPlayerObject` by definition cannot. |
 | `NetBall.Kick(NetPlayer, dir, power)` | authority-side entry point. Humans reach it through `RPC_Kick`, which only resolves the sender; a bot calls it directly. |
 
 Plus one rule that is easy to get wrong: **the forfeit check counts humans, not players**

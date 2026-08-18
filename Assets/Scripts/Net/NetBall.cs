@@ -46,8 +46,12 @@ namespace KongBall
 
         // WHICH OBJECT holds the ball, not which person. It used to be a PlayerRef, which quietly
         // meant "only something with a network connection can ever carry the ball" — so a bot, which
-        // has no PlayerRef and sends no RPCs, could not have touched it. Zero = free ball.
-        [Networked] public int OwnerId { get; set; }
+        // has no PlayerRef and sends no RPCs, could not have touched it.
+        //
+        // NetworkId rather than a raw int: it is the type Fusion documents as "the unique identifier
+        // for a network entity", it carries its own serialisation, and it will not silently compare
+        // equal to some other number. Invalid means free ball.
+        [Networked] public NetworkId OwnerId { get; set; }
         // Bumped on EVERY possession change. Fusion's eventual consistency can collapse a value
         // that flips back and forth (A -> None -> A) into no change at all, so presentation reacts
         // to this counter, never to a transition of Owner itself.
@@ -157,7 +161,7 @@ namespace KongBall
             // it directly: no request, no authority handoff, no window in which two peers disagree.
             UpdatePossession();
 
-            if (OwnerId != 0)
+            if (OwnerId.IsValid)
             {
                 var op = GetPlayer(OwnerId);
                 if (op != null)
@@ -217,7 +221,7 @@ namespace KongBall
 
             Vector3 truth = transform.position;
             bool predicting = !HasStateAuthority && !_localReleased
-                              && OwnerId != 0 && OwnerId == LocalPlayerId;
+                              && OwnerId.IsValid && OwnerId == LocalPlayerId;
 
             if (predicting)
             {
@@ -265,7 +269,7 @@ namespace KongBall
         void UpdatePossession()
         {
             // Does the current carrier still hold it?
-            if (OwnerId != 0)
+            if (OwnerId.IsValid)
             {
                 var op = GetPlayer(OwnerId);
                 if (op == null || op.IsStumbled || op.IsHeld
@@ -284,7 +288,7 @@ namespace KongBall
 
             // A free ball is taken at full radius. Taking it OFF someone needs the challenger to be
             // clearly closer (hysteresis), so two players jostling can't trade it every tick.
-            bool free = OwnerId == 0;
+            bool free = !OwnerId.IsValid;
             float reach = free ? possessionRadius : possessionRadius * stealRadiusFactor;
 
             NetPlayer best = null;
@@ -312,7 +316,7 @@ namespace KongBall
 
         void TakePossession(NetPlayer p)
         {
-            OwnerId = p != null ? p.NetId : 0;
+            OwnerId = p != null ? p.NetId : default;
             PossessionSeq++;
             _dribbleVel = Vector3.zero;
             // Protect the new carrier briefly so possession doesn't thrash between two close players
@@ -340,13 +344,13 @@ namespace KongBall
         public void Kick(NetPlayer who, Vector3 dir, float power01)
         {
             if (!HasStateAuthority) return;
-            if (who == null || OwnerId == 0 || OwnerId != who.NetId) return;   // not yours to kick
+            if (who == null || !OwnerId.IsValid || OwnerId != who.NetId) return;   // not yours to kick
 
             dir.y = 0f;
             if (dir.sqrMagnitude < 1e-4f) return;
             dir.Normalize();
 
-            OwnerId = 0;
+            OwnerId = default;
             PossessionSeq++;
             _dribbleVel = Vector3.zero;
 
@@ -368,8 +372,8 @@ namespace KongBall
 
         void FreeBall(NetPlayer from)
         {
-            if (OwnerId == 0) return;
-            OwnerId = 0;
+            if (!OwnerId.IsValid) return;
+            OwnerId = default;
             PossessionSeq++;
             _dribbleVel = Vector3.zero;
             Vector3 away = from != null ? (_rb.position - from.transform.position) : Vector3.forward;
@@ -387,7 +391,7 @@ namespace KongBall
 
         void ResetToCentre()
         {
-            if (OwnerId != 0) { OwnerId = 0; PossessionSeq++; }
+            if (OwnerId.IsValid) { OwnerId = default; PossessionSeq++; }
             _dribbleVel = Vector3.zero;
             StealLock = TickTimer.CreateFromSeconds(Runner, stealLockDuration);
             _rb.linearVelocity = Vector3.zero;
@@ -396,29 +400,24 @@ namespace KongBall
             transform.position = _rb.position;
         }
 
-        // Resolved against the live player list rather than Runner.TryGetPlayerObject, which can only
-        // answer for a PlayerRef. The list holds at most four entries, so the scan is cheaper than
-        // the dictionary lookup it replaces.
-        static NetPlayer GetPlayer(int id)
+        // Runner.TryFindObject is Fusion's own lookup from a NetworkId, and it answers for anything
+        // spawned — including something the master simulates with no player behind it, which
+        // TryGetPlayerObject by definition cannot.
+        NetPlayer GetPlayer(NetworkId id)
         {
-            if (id == 0) return null;
-            for (int i = 0; i < NetPlayer.Live.Count; i++)
-            {
-                var np = NetPlayer.Live[i];
-                if (np != null && np.NetId == id) return np;
-            }
-            return null;
+            if (!id.IsValid || Runner == null) return null;
+            if (!Runner.TryFindObject(id, out var no) || no == null) return null;
+            return no.GetComponent<NetPlayer>();
         }
 
         // This peer's own player object, for the prediction check: "am I the one carrying it".
-        int LocalPlayerId
+        NetworkId LocalPlayerId
         {
             get
             {
-                if (Runner == null) return 0;
-                if (!Runner.TryGetPlayerObject(Runner.LocalPlayer, out var no) || no == null) return 0;
-                var np = no.GetComponent<NetPlayer>();
-                return np != null ? np.NetId : 0;
+                if (Runner == null) return default;
+                if (!Runner.TryGetPlayerObject(Runner.LocalPlayer, out var no) || no == null) return default;
+                return no.Id;
             }
         }
 

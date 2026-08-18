@@ -59,8 +59,10 @@ namespace KongBall
         public static readonly List<NetPlayer> Live = new List<NetPlayer>();
 
         // Identity as the BALL sees it: the player object, not the person. Used instead of PlayerRef
-        // so that something without a PlayerRef can still carry the ball.
-        public int NetId => Object != null ? (int)Object.Id.Raw : 0;
+        // so that something without a PlayerRef can still carry the ball. NetworkId is the type
+        // Fusion provides for exactly this — "the unique identifier for a network entity" — and it
+        // cannot be confused with any other number the way a raw int can.
+        public NetworkId NetId => Object != null ? Object.Id : default;
 
         CharacterController _cc;
         LocalInputSource _input;
@@ -106,6 +108,14 @@ namespace KongBall
         }
 
         public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            Live.Remove(this);
+        }
+
+        // The list is static and this game leaves a match and starts another without reloading the
+        // scene, so an entry that outlived its object would be a ghost player in the next match.
+        // Despawned covers the normal path; this covers every other way an object can go.
+        void OnDestroy()
         {
             Live.Remove(this);
         }
