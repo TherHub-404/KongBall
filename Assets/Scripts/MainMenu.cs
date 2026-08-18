@@ -23,6 +23,11 @@ namespace KongBall
 
         const int SortingOrder = 4900;
 
+        // Wordmark: width in canvas units, and the gap between the screen's top edge and its top.
+        // The height follows from the artwork, so these two are the only numbers to touch.
+        const float LogoWidth = 440f;
+        const float LogoTopGap = 18f;
+
         // Tuned against MenuStage.Background, which is a strong yellow: mint on yellow was unreadable.
         static readonly Color Ink = new Color(0.10f, 0.15f, 0.09f);
         static readonly Color Primary = new Color(0.10f, 0.40f, 0.23f);
@@ -104,13 +109,7 @@ namespace KongBall
         {
             Ui.NewOverlayCanvas(gameObject, SortingOrder);
 
-            var title = Ui.NewText("Title", transform, 76);
-            if (title != null)
-            {
-                title.text = "KONGBALL";
-                title.color = Ink;
-                Ui.Place(title.rectTransform, 0f, 245f, 900f, 100f);
-            }
+            BuildLogo();
 
             BuildHome();
             BuildModes();
@@ -119,22 +118,72 @@ namespace KongBall
             GoHome();
         }
 
+        // The wordmark, hung from the top edge rather than centred on a magic y: its height depends on
+        // the artwork's own proportions, and anchoring to the top keeps the gap under the screen edge
+        // fixed on every phone.
+        //
+        // The file is cropped to the ink before being committed — the original carried 99 px of empty
+        // space above and 93 below, and 70 on the left against 38 on the right. Laid out as it came,
+        // the logo would have sat low in its box and visibly off-centre.
+        void BuildLogo()
+        {
+            var sprite = LoadLogo();
+            if (sprite == null)
+            {
+                // No artwork: fall back to the name, rather than a menu with no title at all.
+                var t = Ui.NewText("Title", transform, 76);
+                if (t != null) { t.text = "KONGBALL"; t.color = Ink; Ui.Place(t.rectTransform, 0f, 245f, 900f, 100f); }
+                return;
+            }
+
+            var img = Ui.NewImage("Logo", transform);
+            img.sprite = sprite;
+            img.type = Image.Type.Simple;
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+
+            float ratio = sprite.rect.height > 1f ? sprite.rect.width / sprite.rect.height : 3.4f;
+            var rt = img.rectTransform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(LogoWidth, LogoWidth / ratio);
+            rt.anchoredPosition = new Vector2(0f, -LogoTopGap);
+        }
+
+        // Sprite if the importer made one, otherwise built from the texture — so the menu still shows
+        // the logo even if the asset is ever reimported as a plain texture.
+        static Sprite LoadLogo()
+        {
+            var sprite = Resources.Load<Sprite>("Menu/Logo");
+            if (sprite != null) return sprite;
+            var tex = Resources.Load<Texture2D>("Menu/Logo");
+            if (tex == null) { Debug.LogWarning("[Menu] Resources/Menu/Logo missing"); return null; }
+            return Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+        }
+
         void BuildHome()
         {
             _home = NewPanel("Home");
-            Button(_home.transform, "GIOCA", 0f, -120f, Primary, Color.white, () => Only(_modes));
-            Button(_home.transform, "GIOCA CON GLI AMICI", 0f, -225f, Secondary, Color.white,
-                   () => Only(_friends), 520f, 76f);
+            Button(_home.transform, "GIOCA", 0f, 183f, Primary, Color.white,
+                   () => Only(_modes), 520f, 88f, fromBottom: true);
+            Button(_home.transform, "GIOCA CON GLI AMICI", 0f, 78f, Secondary, Color.white,
+                   () => Only(_friends), 520f, 76f, fromBottom: true);
         }
 
         void BuildModes()
         {
             _modes = NewPanel("Modes");
-            Button(_modes.transform, "1 vs 1", 0f, -95f, Primary, Color.white,
-                   () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.OneVsOne)));
-            Button(_modes.transform, "2 vs 2", 0f, -190f, Primary, Color.white,
-                   () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.TwoVsTwo)));
-            Button(_modes.transform, "INDIETRO", 0f, -268f, Secondary, Color.white, GoHome, 320f, 56f);
+
+            // Side by side rather than stacked: three buttons in a column reached high enough to meet
+            // the character's feet on a tall screen, and two choices read better as a pair anyway.
+            Button(_modes.transform, "1 vs 1", -150f, 180f, Primary, Color.white,
+                   () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.OneVsOne)),
+                   280f, 88f, fromBottom: true);
+            Button(_modes.transform, "2 vs 2", 150f, 180f, Primary, Color.white,
+                   () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.TwoVsTwo)),
+                   280f, 88f, fromBottom: true);
+            Button(_modes.transform, "INDIETRO", 0f, 72f, Secondary, Color.white,
+                   GoHome, 320f, 56f, fromBottom: true);
         }
 
         void BuildFriends()
@@ -146,25 +195,25 @@ namespace KongBall
             {
                 head.text = "CREA UNA STANZA E DETTA IL CODICE,\nOPPURE ENTRA CON QUELLO DI UN AMICO";
                 head.color = Ink;
-                Ui.Place(head.rectTransform, 0f, 145f, 900f, 80f);
+                Ui.Place(head.rectTransform, 0f, 118f, 900f, 80f);
             }
 
-            Button(_friends.transform, "CREA  1 vs 1", -170f, 55f, Primary, Color.white,
+            Button(_friends.transform, "CREA  1 vs 1", -170f, 32f, Primary, Color.white,
                    () => Launch(() => NetLauncher.Instance.CreatePrivateMatch(MatchMode.OneVsOne)), 300f, 76f);
-            Button(_friends.transform, "CREA  2 vs 2", 170f, 55f, Primary, Color.white,
+            Button(_friends.transform, "CREA  2 vs 2", 170f, 32f, Primary, Color.white,
                    () => Launch(() => NetLauncher.Instance.CreatePrivateMatch(MatchMode.TwoVsTwo)), 300f, 76f);
 
-            _code = NewInput("Code", _friends.transform, -110f, -50f, 380f);
-            Button(_friends.transform, "ENTRA", 175f, -50f, Primary, Color.white, JoinWithCode, 250f, 76f);
+            _code = NewInput("Code", _friends.transform, -110f, -68f, 380f);
+            Button(_friends.transform, "ENTRA", 175f, -68f, Primary, Color.white, JoinWithCode, 250f, 76f);
 
             _hint = Ui.NewText("Hint", _friends.transform, 24);
             if (_hint != null)
             {
                 _hint.color = Warn;
-                Ui.Place(_hint.rectTransform, 0f, -115f, 900f, 40f);
+                Ui.Place(_hint.rectTransform, 0f, -132f, 900f, 40f);
             }
 
-            Button(_friends.transform, "INDIETRO", 0f, -240f, Secondary, Color.white, GoHome, 320f, 56f);
+            Button(_friends.transform, "INDIETRO", 0f, -245f, Secondary, Color.white, GoHome, 320f, 56f);
         }
 
         void BuildWaiting()
@@ -176,28 +225,28 @@ namespace KongBall
             {
                 head.text = "IN ATTESA DI GIOCATORI";
                 head.color = Ink;
-                Ui.Place(head.rectTransform, 0f, 160f, 900f, 50f);
+                Ui.Place(head.rectTransform, 0f, 120f, 900f, 50f);
             }
 
             _waitCount = Ui.NewText("Count", _waiting.transform, 68);
             if (_waitCount != null)
             {
                 _waitCount.color = Ink;
-                Ui.Place(_waitCount.rectTransform, 0f, 95f, 900f, 90f);
+                Ui.Place(_waitCount.rectTransform, 0f, 55f, 900f, 90f);
             }
 
             _waitCode = Ui.NewText("Code", _waiting.transform, 34);
             if (_waitCode != null)
             {
                 _waitCode.color = Primary;
-                Ui.Place(_waitCode.rectTransform, 0f, 25f, 900f, 50f);
+                Ui.Place(_waitCode.rectTransform, 0f, -10f, 900f, 50f);
             }
 
             _waitClock = Ui.NewText("Clock", _waiting.transform, 30);
             if (_waitClock != null)
             {
                 _waitClock.color = Ink;
-                Ui.Place(_waitClock.rectTransform, 0f, -25f, 900f, 44f);
+                Ui.Place(_waitClock.rectTransform, 0f, -60f, 900f, 44f);
             }
 
             Button(_waiting.transform, "ABBANDONA", 0f, -240f, Secondary, Color.white,
@@ -279,11 +328,13 @@ namespace KongBall
         }
 
         void Button(Transform parent, string label, float x, float y, Color fill, Color ink,
-                    UnityEngine.Events.UnityAction onClick, float width = 520f, float height = 88f)
+                    UnityEngine.Events.UnityAction onClick, float width = 520f, float height = 88f,
+                    bool fromBottom = false)
         {
             var img = Ui.NewImage("Btn_" + label, parent);
             img.color = fill;
-            Ui.Place(img.rectTransform, x, y, width, height);
+            if (fromBottom) Ui.PlaceFromBottom(img.rectTransform, x, y, width, height);
+            else Ui.Place(img.rectTransform, x, y, width, height);
 
             var btn = img.gameObject.AddComponent<Button>();
             btn.targetGraphic = img;

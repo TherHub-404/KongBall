@@ -71,6 +71,18 @@ namespace KongBall
             rt.anchoredPosition = new Vector2(x, y);
         }
 
+        // Anchored to the bottom edge instead of the middle. Anything that must keep clear of the
+        // character belongs here: the character is placed as a fraction of the screen height, so on a
+        // taller screen it reaches further down in canvas units and would meet a fixed-position button
+        // coming the other way.
+        public static void PlaceFromBottom(RectTransform rt, float x, float up, float w, float h)
+        {
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(w, h);
+            rt.anchoredPosition = new Vector2(x, up);
+        }
+
         public static void Stretch(RectTransform rt)
         {
             rt.anchorMin = Vector2.zero;

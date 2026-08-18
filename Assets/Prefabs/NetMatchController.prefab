@@ -65,10 +65,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: eb723596ba0c94fa994f7970063ed25b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::KongBall.MatchController
-  matchDuration: 120
-  scoreLimit: 5
+  endless: 0
+  matchDuration: 180
+  scoreLimit: 3
   countdownDuration: 3
   goalPauseDuration: 2
+  abandonGrace: 1.5
   _ScoreBlue: 0
   _ScoreRed: 0
   _PhaseId: 0

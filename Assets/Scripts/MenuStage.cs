@@ -23,9 +23,10 @@ namespace KongBall
 
         // Where the character sits vertically, as a fraction of half the screen: 0 is the middle, +1
         // the top edge. The camera is then derived from these, so the framing holds whatever the model
-        // measures. Feet stop above the buttons and the head stops below the title.
-        const float FeetFrac = -0.18f;
-        const float HeadFrac = 0.55f;
+        // measures. Feet stop above the buttons and the head stops below the wordmark — which now
+        // hangs lower than the old text title did, hence the room made for it here.
+        const float FeetFrac = -0.22f;
+        const float HeadFrac = 0.45f;
 
         static MenuStage _current;
         public static bool Visible => _current != null;
