@@ -13,9 +13,15 @@ namespace KongBall
         public enum Phase { Waiting, Countdown, Playing, GoalPause, Finished }
 
         [Header("Rules")]
-        public bool endless = true;         // infinite match for playtesting (no timer / no win)
-        public float matchDuration = 120f;
-        public int scoreLimit = 5;
+        // Three minutes, or the first team to three goals — whichever comes first.
+        //
+        // The prefab carries these values and overrides the defaults here, so both are kept in step:
+        // `endless` was not in the prefab at all (the field was added to the script after the prefab
+        // was last saved), which meant the code default alone decided it. It is written explicitly
+        // now, so there is no question about which of the two wins.
+        public bool endless = false;        // true = no timer and no win, for playtesting alone
+        public float matchDuration = 180f;
+        public int scoreLimit = 3;
         public float countdownDuration = 3f;
         public float goalPauseDuration = 2f;
 
