@@ -32,7 +32,11 @@ namespace KongBall
                 switch (mc.CurPhase)
                 {
                     case MatchController.Phase.Finished:
-                        extra = mc.Winner == 0 ? "   VINCE BLU" : mc.Winner == 1 ? "   VINCE ROSSO" : "   PAREGGIO"; break;
+                        extra = mc.Winner == 0 ? "   VINCE BLU" : mc.Winner == 1 ? "   VINCE ROSSO" : "   PAREGGIO";
+                        // Said here and not in the banner: that one is sized for "GOAL!", so an extra
+                        // line on it runs off both edges of the screen.
+                        if (mc.ByForfeit) extra += "  (RITIRO)";
+                        break;
                     default:
                         if (mc.endless) { extra = ""; break; }
                         int t = Mathf.CeilToInt(mc.MatchTime);

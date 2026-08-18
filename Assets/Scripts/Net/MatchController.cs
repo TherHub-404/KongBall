@@ -19,6 +19,10 @@ namespace KongBall
         public float countdownDuration = 3f;
         public float goalPauseDuration = 2f;
 
+        [Tooltip("How long a team must have nobody left before the match is awarded to the other one. " +
+                 "A moment of tolerance, so a replication hiccup cannot end a match.")]
+        public float abandonGrace = 1.5f;
+
         [Networked] public int ScoreBlue { get; set; }
         [Networked] public int ScoreRed { get; set; }
         [Networked] public int PhaseId { get; set; }       // Phase
@@ -27,6 +31,7 @@ namespace KongBall
         [Networked] public int Winner { get; set; }        // -1 none, 0 blue, 1 red, 2 draw
         [Networked] public int KickoffSeq { get; set; }    // bumps each kickoff -> players reset
         [Networked] public int Seats { get; set; }         // players this match waits for (2 or 4)
+        [Networked] public bool ByForfeit { get; set; }    // the win was awarded, not played out
 
         public static MatchController Instance;
         public Phase CurPhase => (Phase)PhaseId;
@@ -39,6 +44,8 @@ namespace KongBall
         readonly HashSet<PlayerRef> _live = new HashSet<PlayerRef>();
         readonly List<PlayerRef> _stale = new List<PlayerRef>();
         float _assignCooldown;
+        int _emptyTeam = -1;
+        float _emptyFor;
 
         // Called by the ball's authority (coordinate goal detection) -> runs on the master.
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
@@ -96,10 +103,12 @@ namespace KongBall
                     if (Ready()) { CloseSession(); StartCountdown(); }
                     break;
                 case Phase.Countdown:
+                    if (TeamAbandoned()) break;
                     PhaseTimer -= dt;
                     if (PhaseTimer <= 0f) PhaseId = (int)Phase.Playing;
                     break;
                 case Phase.Playing:
+                    if (TeamAbandoned()) break;
                     if (!endless)
                     {
                         MatchTime -= dt;
@@ -107,6 +116,7 @@ namespace KongBall
                     }
                     break;
                 case Phase.GoalPause:
+                    if (TeamAbandoned()) break;
                     PhaseTimer -= dt;
                     if (PhaseTimer <= 0f) Kickoff();
                     break;
@@ -243,6 +253,42 @@ namespace KongBall
         {
             PhaseId = (int)Phase.Finished;
             Winner = ScoreBlue > ScoreRed ? 0 : (ScoreRed > ScoreBlue ? 1 : 2);
+        }
+
+        // --- forfeit -----------------------------------------------------------------------------
+
+        // One rule covers both modes: a side is out when it has nobody left. In 1v1 that is one
+        // player leaving, in 2v2 it takes both — which is exactly the behaviour asked for, without a
+        // special case per mode, and it still holds if a 3v3 ever exists.
+        //
+        // It counts who is STILL HERE rather than who pressed the forfeit button, so closing the app,
+        // crashing and losing the line all end the match the same way. That matters more than the
+        // polite forfeit: leaving the opponent alone in a match that can never end is the failure
+        // this is here to prevent.
+        //
+        // Returns true when the match has just been decided, so the caller stops running the phase.
+        bool TeamAbandoned()
+        {
+            int blue = 0, red = 0;
+            foreach (var p in Runner.ActivePlayers)
+            {
+                var np = PlayerOf(p);
+                if (np == null || !np.TeamAssigned) continue;
+                if (np.NetTeam == (int)Team.Red) red++; else blue++;
+            }
+
+            int gone = blue == 0 ? (int)Team.Blue : (red == 0 ? (int)Team.Red : -1);
+            if (gone < 0) { _emptyTeam = -1; _emptyFor = 0f; return false; }
+
+            if (_emptyTeam != gone) { _emptyTeam = gone; _emptyFor = 0f; }
+            _emptyFor += Runner.DeltaTime;
+            if (_emptyFor < abandonGrace) return false;
+
+            PhaseId = (int)Phase.Finished;
+            Winner = gone == (int)Team.Blue ? (int)Team.Red : (int)Team.Blue;
+            ByForfeit = true;
+            Debug.Log("[Net] team " + (Team)gone + " abandoned, match awarded to " + (Team)Winner);
+            return true;
         }
     }
 }

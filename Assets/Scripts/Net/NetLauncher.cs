@@ -216,6 +216,15 @@ namespace KongBall
             return "CONNESSIONE FALLITA\n" + reason;
         }
 
+        // Forfeit differs from LeaveMatch only in what the player is told afterwards. The match
+        // itself needs no message: MatchController decides on who is still standing, so simply
+        // leaving is the forfeit.
+        public void Forfeit()
+        {
+            _notice = "HAI ABBANDONATO LA PARTITA";
+            LeaveMatch();
+        }
+
         public void LeaveMatch()
         {
             // Latched before anything else: shutdown is asynchronous, and without this the waiting
@@ -228,6 +237,7 @@ namespace KongBall
 
         void TearDownRunner()
         {
+            MatchMenu.Hide();
             if (_runner == null) return;
             if (_runner.gameObject != null) Destroy(_runner.gameObject);
             _runner = null;
@@ -313,6 +323,7 @@ namespace KongBall
             if (_leaving) return;
 
             var mc = MatchController.Instance;
+            
 
             // Joining by code does not pick a mode — the room already has one. Adopt it, so that if
             // this peer later becomes master its idea of the match size is the room's, not the
@@ -339,6 +350,11 @@ namespace KongBall
                 _waitingShown = false;
                 _waitUntil = 0f;
                 _lastSeated = -1;
+
+                // The corner button, for as long as there is a match to leave. It goes at the final
+                // whistle, so the result screen is not covered by a way out of a match already over.
+                if (mc != null && mc.CurPhase != MatchController.Phase.Finished) MatchMenu.Show(Forfeit);
+                else MatchMenu.Hide();
                 return;
             }
 
@@ -346,6 +362,8 @@ namespace KongBall
             // up slowly would throw out the player who had the patience to wait for it.
             int seated = mc != null ? mc.Seated : 0;
             if (seated != _lastSeated) { _lastSeated = seated; _waitUntil = Time.time + waitTimeoutSeconds; }
+
+            MatchMenu.Hide();   // waiting is not a match: there is nothing to forfeit yet
 
             // Only once the connecting overlay is done, so the two screens do not fight over the top.
             if (_screen == null)
