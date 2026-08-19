@@ -36,8 +36,10 @@ namespace KongBall
         [Networked] public float MatchTime { get; set; }   // match time remaining
         [Networked] public int Winner { get; set; }        // -1 none, 0 blue, 1 red, 2 draw
         [Networked] public int KickoffSeq { get; set; }    // bumps each kickoff -> players reset
-        [Networked] public int Seats { get; set; }         // players this match waits for (2 or 4)
+        [Networked] public int Seats { get; set; }         // players this match waits for, bots included
         [Networked] public bool ByForfeit { get; set; }    // the win was awarded, not played out
+        [Networked] public bool WithBots { get; set; }     // this match was SET UP with bots on the pitch
+        [Networked] public int HumanSeats { get; set; }    // of those seats, how many a person must fill
 
         public static MatchController Instance;
         public Phase CurPhase => (Phase)PhaseId;
@@ -80,7 +82,10 @@ namespace KongBall
                 ScoreBlue = 0; ScoreRed = 0; Winner = -1;
                 MatchTime = matchDuration;
                 // Published so every client can show "2/4" without knowing how the match was started.
-                Seats = NetLauncher.Instance != null ? NetLauncher.Instance.RequiredPlayers : 2;
+                // Bodies, not humans: a practice match holds one human and two players.
+                Seats = NetLauncher.Instance != null ? NetLauncher.Instance.RequiredBodies : 2;
+                HumanSeats = NetLauncher.Instance != null ? NetLauncher.Instance.RequiredPlayers : 2;
+                WithBots = NetLauncher.Instance != null && NetLauncher.Instance.WithBots;
                 PhaseId = (int)Phase.Waiting;
                 PhaseTimer = 0f;
             }
@@ -135,22 +140,24 @@ namespace KongBall
 
         // Everyone present AND everyone knowing which side they are on. Starting on the count alone
         // would kick off with a player still standing on the wrong half.
+        //
+        // One list and one rule for humans and bots, rather than a pass over Runner.ActivePlayers and
+        // a special case for the rest. For a human this asks exactly what it asked before — a player
+        // object that exists and carries a team — because that is what the old two-step amounted to.
         bool Ready()
         {
             if (CountPlayers() < (Seats > 0 ? Seats : 2)) return false;
-            foreach (var p in Runner.ActivePlayers)
-            {
-                var np = PlayerOf(p);
+            foreach (var np in NetPlayer.Live)
                 if (np == null || !np.TeamAssigned) return false;
-            }
             return true;
         }
 
+        // Players on the pitch, not peers in the room: a bot is neither in ActivePlayers nor able to
+        // join, and a match that waits for connections would never start one that includes it.
         int CountPlayers()
         {
-            if (Runner == null) return 0;
             int n = 0;
-            foreach (var p in Runner.ActivePlayers) n++;
+            foreach (var np in NetPlayer.Live) if (np != null) n++;
             return n;
         }
 
@@ -275,18 +282,29 @@ namespace KongBall
         // Returns true when the match has just been decided, so the caller stops running the phase.
         bool TeamAbandoned()
         {
-            // HUMANS only, and over the live player list rather than Runner.ActivePlayers. Counting
-            // every player would mean that a side whose only human walked out keeps going because a
-            // bot is still standing there — a match playing itself with nobody watching. A side is
-            // out when nobody is left who chose to be there.
-            int blue = 0, red = 0;
+            // Over the live player list rather than Runner.ActivePlayers, which only knows about
+            // peers with a connection. Humans and bodies are counted separately because the rule
+            // differs, and it differs for one reason:
+            //
+            //   normally  — a side is out when nobody is left on it who CHOSE to be there. Counting
+            //               bots would mean a match whose only human walked out keeps playing itself.
+            //   with bots — a side is out only when it is completely EMPTY. In a practice match the
+            //               bot's side has no human by design, and the rule above would award the
+            //               match to the player on the first whistle. There is no risk of a match
+            //               playing itself here: it lives on the peer of the person who started it.
+            int blueH = 0, redH = 0, blueAny = 0, redAny = 0;
             foreach (var np in NetPlayer.Live)
             {
-                if (np == null || np.IsBot || !np.TeamAssigned) continue;
-                if (np.NetTeam == (int)Team.Red) red++; else blue++;
+                if (np == null || !np.TeamAssigned) continue;
+                bool red = np.NetTeam == (int)Team.Red;
+                if (red) redAny++; else blueAny++;
+                if (np.IsBot) continue;
+                if (red) redH++; else blueH++;
             }
 
-            int gone = blue == 0 ? (int)Team.Blue : (red == 0 ? (int)Team.Red : -1);
+            int gone = WithBots
+                ? (blueAny == 0 ? (int)Team.Blue : (redAny == 0 ? (int)Team.Red : -1))
+                : (blueH == 0 ? (int)Team.Blue : (redH == 0 ? (int)Team.Red : -1));
             if (gone < 0) { _emptyTeam = -1; _emptyFor = 0f; return false; }
 
             if (_emptyTeam != gone) { _emptyTeam = gone; _emptyFor = 0f; }

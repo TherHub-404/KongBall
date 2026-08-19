@@ -182,8 +182,14 @@ namespace KongBall
             Button(_modes.transform, "2 vs 2", 150f, 180f, Primary, Color.white,
                    () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.TwoVsTwo)),
                    280f, 88f, fromBottom: true);
-            Button(_modes.transform, "INDIETRO", 0f, 72f, Secondary, Color.white,
-                   GoHome, 320f, 56f, fromBottom: true);
+            // Practice sits BESIDE the way back rather than under the pair, and that is a measured
+            // decision, not a taste one: the pair above already clears the character's feet by only
+            // ~30 canvas units on a 19.5:9 phone, so a third full-width row would have run into them
+            // — the same collision that was found by simulation once already.
+            Button(_modes.transform, "INDIETRO", -170f, 72f, Secondary, Color.white,
+                   GoHome, 300f, 56f, fromBottom: true);
+            Button(_modes.transform, "ALLENAMENTO", 170f, 72f, Primary, Color.white,
+                   () => Launch(() => NetLauncher.Instance.StartPractice()), 300f, 56f, fromBottom: true);
         }
 
         void BuildFriends()

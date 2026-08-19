@@ -65,7 +65,8 @@ namespace KongBall
         public NetworkId NetId => Object != null ? Object.Id : default;
 
         CharacterController _cc;
-        LocalInputSource _input;
+        LocalInputSource _input;    // the human's joystick; null on a bot
+        IPlayerBrain _brain;        // the bot's brain; null on a human
         Transform _cam;
         Renderer _rend;
         Renderer _ring;
@@ -102,8 +103,16 @@ namespace KongBall
 
             if (HasStateAuthority)
             {
-                _input = UnityEngine.Object.FindAnyObjectByType<LocalInputSource>();
-                if (Camera.main != null) _cam = Camera.main.transform;
+                // A bot carries its brain on its own object. Asking the OBJECT rather than the
+                // networked IsBot flag keeps this independent of replication order — and the camera
+                // must not be touched: on the master's client it belongs to the person playing, and a
+                // bot that called SetupCamera would point it at itself.
+                _brain = GetComponent<IPlayerBrain>();
+                if (_brain == null)
+                {
+                    _input = UnityEngine.Object.FindAnyObjectByType<LocalInputSource>();
+                    if (Camera.main != null) _cam = Camera.main.transform;
+                }
             }
         }
 
@@ -133,7 +142,7 @@ namespace KongBall
             if (st && !_wasStumbled && SfxManager.Instance != null) SfxManager.Instance.PlayImpact();
             _wasStumbled = st;
 
-            if (HasStateAuthority)
+            if (HasStateAuthority && _brain == null)
             {
                 if (!_camReady) SetupCamera();
                 UpdateAimLine();
@@ -236,7 +245,8 @@ namespace KongBall
 
         public override void FixedUpdateNetwork()
         {
-            if (!HasStateAuthority || _input == null || _cc == null) return;
+            if (!HasStateAuthority || _cc == null) return;
+            if (_input == null && _brain == null) return;
             float dt = Runner.DeltaTime;
 
             // Safety net. The ball has always had one; the player never did, so anything that put a
@@ -251,6 +261,10 @@ namespace KongBall
 
             UpdateBallIgnore(); // per-client: the ball ignores ME only while I carry it (+kick grace)
 
+            // One read per tick, one shape, whoever produced it. Everything below this line is the
+            // same code for a person and for a bot.
+            PlayerIntent want = ReadIntent(dt);
+
             // Match phase: self-reset on a new kickoff, and freeze unless we're PLAYING.
             var mc = MatchController.Instance;
             if (mc != null)
@@ -262,7 +276,7 @@ namespace KongBall
                     if (_grounded && _vY < 0f) _vY = -2f; else _vY += gravity * dt;
                     var ff = _cc.Move(Vector3.up * _vY * dt);
                     _grounded = (ff & CollisionFlags.Below) != 0 || _cc.isGrounded;
-                    _prevAction = _input.GetActionHeld();
+                    _prevAction = want.Action;
                     return;
                 }
             }
@@ -271,7 +285,7 @@ namespace KongBall
             bool held = IsHeld;
 
             // Grab ends on button release or when it times out.
-            if (_grabTarget != null && (_grabLock.ExpiredOrNotRunning(Runner) || !_input.GetActionHeld())) EndGrab();
+            if (_grabTarget != null && (_grabLock.ExpiredOrNotRunning(Runner) || !want.Action)) EndGrab();
             bool grabbing = !_grabLock.ExpiredOrNotRunning(Runner);
 
             // Stumbled / held (victim) = fully rooted. Grabbing (grabber) can still shuffle slowly.
@@ -282,23 +296,13 @@ namespace KongBall
                 if (_grounded && _vY < 0f) _vY = -2f; else _vY += gravity * (_vY < 0f ? fallMultiplier : 1f) * dt;
                 var flagsF = _cc.Move((_horizVel + Vector3.up * _vY) * dt);
                 _grounded = (flagsF & CollisionFlags.Below) != 0 || _cc.isGrounded;
-                _prevAction = _input.GetActionHeld();
+                _prevAction = want.Action;
                 return;
             }
 
             // --- Normal control (reduced speed while grabbing) ---
             float spd = grabbing ? moveSpeed * grabMoveMultiplier : moveSpeed;
-            Vector2 mv = _input.GetMove();
-            Vector3 mdir;
-            if (_cam != null)
-            {
-                Vector3 f = _cam.forward; f.y = 0f;
-                Vector3 r = _cam.right; r.y = 0f;
-                if (f.sqrMagnitude > 1e-6f) f.Normalize();
-                if (r.sqrMagnitude > 1e-6f) r.Normalize();
-                mdir = r * mv.x + f * mv.y;
-            }
-            else mdir = new Vector3(mv.x, 0f, mv.y);
+            Vector3 mdir = want.Move;
 
             float inMag = Mathf.Clamp01(mdir.magnitude);
             Vector3 wish = (inMag > 0.15f ? mdir.normalized : Vector3.zero) * spd * inMag;
@@ -312,7 +316,7 @@ namespace KongBall
             }
 
             // No jumping while grabbing.
-            if (!grabbing && _input.ConsumeJump()) _jumpBuf = jumpBufferTime;
+            if (!grabbing && ConsumeJump()) _jumpBuf = jumpBufferTime;
             _jumpBuf -= dt;
             _coyote = _grounded ? coyoteTime : _coyote - dt;
             if (!grabbing && _jumpBuf > 0f && _coyote > 0f) { _vY = jumpVelocity; _jumpBuf = 0f; _coyote = 0f; _grounded = false; }
@@ -325,15 +329,69 @@ namespace KongBall
             _grounded = (flags & CollisionFlags.Below) != 0 || _cc.isGrounded;
 
             // While grabbing, don't process kick/new-grab; just keep action edge in sync.
-            if (grabbing) _prevAction = _input.GetActionHeld();
-            else HandleBall();
+            if (grabbing) _prevAction = want.Action;
+            else HandleBall(want);
         }
 
-        // Contextual ACTION: with ball = KICK (drag-aim, release), without ball = PUSH.
-        void HandleBall()
+        // The joystick, resolved into the same world-space intent a brain produces. The camera maths
+        // lives HERE and nowhere further down, because the camera belongs to the person: a bot has
+        // none, and once the two paths meet in PlayerIntent nothing below needs to know which ran.
+        PlayerIntent ReadIntent(float dt)
         {
-            bool action = _input.GetActionHeld();
-            bool pressEdge = action && !_prevAction;
+            if (_brain != null) return _brain.Think(this, dt);
+
+            var want = default(PlayerIntent);
+            if (_input == null) return want;
+
+            Vector2 mv = _input.GetMove();
+            if (_cam != null)
+            {
+                Vector3 f = _cam.forward; f.y = 0f;
+                Vector3 r = _cam.right; r.y = 0f;
+                if (f.sqrMagnitude > 1e-6f) f.Normalize();
+                if (r.sqrMagnitude > 1e-6f) r.Normalize();
+                want.Move = r * mv.x + f * mv.y;
+            }
+            else want.Move = new Vector3(mv.x, 0f, mv.y);
+
+            want.Action = _input.GetActionHeld();
+
+            // The kick this tick would produce, from the drag remembered while the button was down.
+            // Resolved BEFORE the drag is updated, because a kick fires on the RELEASE tick — by
+            // which time the finger has gone and GetAimDelta reads zero.
+            if (_lastAim.sqrMagnitude > 100f && _cam != null)
+            {
+                Vector3 f = _cam.forward; f.y = 0f; f.Normalize();
+                Vector3 r = _cam.right; r.y = 0f; r.Normalize();
+                want.KickDir = (r * _lastAim.x + f * _lastAim.y).normalized;
+            }
+            else want.KickDir = Vector3.zero;   // straight ahead
+
+            float power = 0.5f;
+            if (_lastAim.sqrMagnitude > 1f) power = Mathf.Clamp01(_lastAim.magnitude / (Screen.height * 0.22f));
+            want.KickPower = Mathf.Max(power, 0.35f);
+
+            if (want.Action)
+            {
+                Vector2 aim = _input.GetAimDelta();
+                if (aim.sqrMagnitude > 1f) _lastAim = aim;
+            }
+            else _lastAim = Vector2.zero;
+
+            return want;
+        }
+
+        // Polled at the point of use rather than read with the rest of the intent: see IPlayerBrain.
+        bool ConsumeJump()
+        {
+            if (_brain != null) return _brain.ConsumeJump();
+            return _input != null && _input.ConsumeJump();
+        }
+
+        // Contextual ACTION: with ball = KICK (aim then release), without ball = PUSH / GRAB.
+        void HandleBall(PlayerIntent want)
+        {
+            bool action = want.Action;
 
             // Possession is NOT claimed from here. The ball's authority decides it by proximity
             // (NetBall.UpdatePossession) and we simply read the result — no client ever writes ball
@@ -342,39 +400,13 @@ namespace KongBall
 
             if (mine)
             {
-                // While holding, remember the drag (button zeroes it on release).
-                if (action)
-                {
-                    Vector2 aim = _input.GetAimDelta();
-                    if (aim.sqrMagnitude > 1f) _lastAim = aim;
-                }
-                // Kick on RELEASE toward the dragged direction (tap = straight ahead). The impulse
-                // is applied by the ball's authority; the animation and SFX fire here immediately
-                // (KickSeq is on MY object, so that write is authoritative and instant).
+                // Kick on RELEASE, toward the direction the intent named (zero = straight ahead).
                 if (!action && _prevAction)
-                {
-                    Vector3 dir;
-                    if (_lastAim.sqrMagnitude > 100f && _cam != null)
-                    {
-                        Vector3 f = _cam.forward; f.y = 0f; f.Normalize();
-                        Vector3 r = _cam.right; r.y = 0f; r.Normalize();
-                        dir = (r * _lastAim.x + f * _lastAim.y).normalized;
-                    }
-                    else dir = transform.forward;
-                    float power = 0.5f;
-                    if (_lastAim.sqrMagnitude > 1f) power = Mathf.Clamp01(_lastAim.magnitude / (Screen.height * 0.22f));
-                    power = Mathf.Max(power, 0.35f);
-                    Ball.RPC_Kick(dir, power);
-                    Ball.NotifyLocalKick();  // mesh leaves the foot now, not a round trip later
-                    KickSeq++; // triggers the kick animation on all clients
-                    _kickIgnoreUntil = Time.time + 0.5f; // let the kicked ball escape my body
-                }
-                if (!action) _lastAim = Vector2.zero;
+                    Shoot(want.KickDir.sqrMagnitude > 1e-4f ? want.KickDir : transform.forward, want.KickPower);
             }
             else
             {
                 // No ball: HOLD = GRAB, quick TAP = PUSH.
-                _ = pressEdge; // (kept for clarity)
                 if (action) _actionHeldTime += Runner.DeltaTime; else _actionHeldTime = 0f;
 
                 if (action && !_grabFired && _actionHeldTime >= holdThreshold)
@@ -403,6 +435,27 @@ namespace KongBall
             }
 
             _prevAction = action;
+        }
+
+        // The impulse is applied by the ball's authority; the animation and SFX fire here immediately
+        // (KickSeq is on MY object, so that write is authoritative and instant).
+        //
+        // Two ways to reach the same authority-side method. A remote carrier has to ask over the wire
+        // and predicts the mesh leaving its foot so the shot does not wait a round trip; whoever is
+        // ALREADY the ball's authority — which is every bot, since bots exist only on the master —
+        // calls it directly, because an RPC to oneself is a message with nothing to carry and
+        // RPC_Kick resolves the SENDER, which for a bot would resolve to the master's own avatar.
+        void Shoot(Vector3 dir, float power01)
+        {
+            var ball = Ball;
+            if (ball == null) return;
+            power01 = Mathf.Clamp01(power01);
+
+            if (ball.Object != null && ball.Object.HasStateAuthority) ball.Kick(this, dir, power01);
+            else { ball.RPC_Kick(dir, power01); ball.NotifyLocalKick(); }
+
+            KickSeq++; // triggers the kick animation on all clients
+            _kickIgnoreUntil = Time.time + 0.5f; // let the kicked ball escape my body
         }
 
         NetPlayer FindTargetInFront()
@@ -458,7 +511,10 @@ namespace KongBall
         {
             bool blue = NetTeam == 0;
             float x = blue ? -6f : 6f;
-            int id = Object.StateAuthority.PlayerId;
+            // Spread along the goal line so team mates do not start inside one another. A bot has no
+            // PlayerRef to be spread by — every bot in the room answers to the master's — so its own
+            // network id does the job instead.
+            int id = _brain != null ? (int)(Object.Id.Raw % 3u) : Object.StateAuthority.PlayerId;
             float z = ((id % 3) - 1) * 3f;
             Vector3 pos = new Vector3(x, SpawnHeight, z);
             Quaternion rot = Quaternion.LookRotation(blue ? Vector3.right : Vector3.left, Vector3.up);
