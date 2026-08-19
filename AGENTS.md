@@ -151,10 +151,39 @@ un errore che il check avrebbe preso.
 Se mentre lavori ne trovi un'altra, dillo e falla dopo. Una PR che fa tre cose non si può né rivedere
 né annullare a metà.
 
-### 15. Per provare sul telefono non si mergia.
+### 15. Per provare sul telefono si mergia su `dev`. Solo quello fa una build.
 
-Si chiede una build del proprio branch. Mergiare per testare è come si faceva prima, ed è il motivo
-per cui `main` si è rotto.
+Sì: si mergia per provare. È esattamente il mestiere di `dev` ed è la ragione per cui esiste — un
+merge su `dev` fa partire la pipeline che builda e carica su TestFlight. `main` non builda niente.
+
+Da cui due conseguenze da mettere in conto:
+
+- **`dev` traballa, ed è normale.** Ci arriva roba non ancora provata su un telefono, e ogni tanto
+  qualcosa non funziona. Si annulla il merge e costa niente. Quello che non deve traballare è `main`.
+- **La build contiene tutto ciò che c'è su `dev`**, non solo il tuo. Se qualcuno ha mergiato due
+  minuti prima, nella "tua" build c'è anche la sua roba. Le build sono in coda e non si annullano a
+  vicenda proprio per questo: un merge, una build, così si capisce di chi è quella che stai provando.
+
+---
+
+---
+
+## Come si arriva sul telefono
+
+```
+  nome/feature-in-kebab-case          il tuo branch
+            │
+            │  PR  →  check di compilazione (~7 min)
+            ▼
+          dev                          merge  →  build iOS + TestFlight (~20 min)
+            │
+            │  PR di promozione, quando la cosa è provata
+            ▼
+          main                         niente build automatica
+```
+
+Il check sulla PR non è una build: compila e basta, e ci mette pochi minuti. Serve a non scoprire un
+errore di sintassi venti minuti dopo, a build fatta — cosa che qui è già successa due volte.
 
 ---
 
