@@ -27,11 +27,28 @@ name: iOS TestFlight
 # path for Personal. Note it still cannot answer a 2FA prompt, so the Unity account used here
 # must not have two-factor enabled.
 
+# CHI FA PARTIRE UNA BUILD
+#
+# Solo un merge su `dev`. Non i branch di feature, non `main`.
+#
+# Non e' una restrizione burocratica, e' il confine di fiducia: `workflow_dispatch` esegue la
+# definizione del workflow presa DAL BRANCH da cui lo lanci, quindi un dispatch da un branch
+# qualsiasi farebbe girare il file di quel branch — con i secret di firma Apple accanto. Legando la
+# build a `dev`, l'unico modo di far girare codice di pipeline e' una PR su `dev`, che si vede.
+#
+# `workflow_dispatch` resta per ri-buildare `dev` o `main` a mano (un hotfix, una build persa). Cio'
+# che lo rende sicuro NON e' questo commento: e' la regola sui branch dell'Environment `testflight`,
+# che GitHub applica lato server e che nega i secret a qualunque altro ref.
 on:
   push:
-    branches: [main]
+    branches: [dev]
   workflow_dispatch: {}
 
+# In coda, non annullate. Le build costano venti minuti e la tentazione e' annullare la precedente
+# quando ne arriva una nuova — ma cosi' due merge ravvicinati diventano UNA build che contiene le
+# cose di due persone, e nessuno sa piu' di chi e' la versione che sta provando. In coda ogni merge
+# produce esattamente una build, quindi "una build = una PR = una persona", che e' precisamente cio'
+# che serve al timbro dentro il gioco e al changelog su Telegram.
 concurrency:
   group: ios-testflight
   cancel-in-progress: false
@@ -43,6 +60,10 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 120
+    # Da creare in Settings > Environments, con "Deployment branches" limitato a dev e main, e i
+    # secret Apple spostati dentro. Finche' non esiste, GitHub lo crea implicitamente senza regole e
+    # i secret restano quelli del repo: il workflow funziona lo stesso, ma senza la protezione.
+    environment: testflight
     steps:
       - name: Checkout
         uses: actions/checkout@v4

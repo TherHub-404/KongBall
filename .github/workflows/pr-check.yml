@@ -14,9 +14,11 @@ name: PR check
 # UnityEditor.iOS.Xcode, so a checker without that module would fail to compile code that is fine.
 # Matching the release environment is the whole point — a green check somewhere else proves nothing.
 
+# `dev` e' dove arrivano le feature, `main` e' cio' che e' gia' stato provato: la porta di ingresso
+# va sorvegliata su entrambe.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch: {}
 
 concurrency:
@@ -30,6 +32,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Two seconds, and it is the protocol's only mechanical check: a branch carries the name of the
+      # person working on it, so that a feature, a build and a bug report can always be traced back to
+      # somebody. Skipped for pull requests from forks, whose branch names are outside this agreement.
+      - name: Branch name
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          # `dev` is the one branch that legitimately opens a pull request without a person's name on
+          # it: promoting dev into main. Every other head branch belongs to somebody.
+          if [ "$BRANCH" = "dev" ]; then echo "Promozione da dev: ok."; exit 0; fi
+          if ! printf '%s' "$BRANCH" | grep -Eq '^[a-z][a-z0-9]*(-[a-z0-9]+)*/[a-z0-9]+(-[a-z0-9]+)*$'; then
+            echo "::error::Il branch si chiama '$BRANCH'. Matteo vuole 'nome/feature-in-kebab-case' —"
+            echo "::error::minuscolo, senza accenti, senza underscore. Esempi: luca/portiere-automatico"
+            exit 1
+          fi
+          echo "Branch '$BRANCH' ok."
 
       # Seconds, and no Unity involved. Every one of these is a mistake that actually shipped here:
       # a script committed without its .meta, a duplicated GUID, a Resources.Load name with no asset
