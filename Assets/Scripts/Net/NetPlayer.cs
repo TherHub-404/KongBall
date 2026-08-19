@@ -80,6 +80,8 @@ namespace KongBall
         bool _camReady;
         Vector2 _lastAim;
         LineRenderer _aimLine;
+        NameTag _tag;          // debug label over bots; temporary, see UpdateNameTag
+        int _tagOrdinal = -1;
 
         Vector3 _horizVel;   // horizontal velocity (m/s)
         float _vY;           // vertical velocity
@@ -135,6 +137,7 @@ namespace KongBall
         {
             ApplyColor();
             UpdateRing();
+            UpdateNameTag();
 
             // Feedback SFX (all clients observe networked state).
             if (KickSeq != _sfxKickSeq) { _sfxKickSeq = KickSeq; if (SfxManager.Instance != null) SfxManager.Instance.PlayKick(); }
@@ -147,6 +150,39 @@ namespace KongBall
                 if (!_camReady) SetupCamera();
                 UpdateAimLine();
             }
+        }
+
+        // DEBUG, and asked for as such: bots wear their name while their behaviour is being judged.
+        // To remove it, delete this method, its call above, the two fields, and Scripts/NameTag.cs.
+        //
+        // Driven by the networked IsBot and not by the brain: the brain exists only on the peer that
+        // simulates the bot, and this has to be readable on every phone in the match.
+        void UpdateNameTag()
+        {
+            if (!IsBot)
+            {
+                if (_tag != null) { Destroy(_tag.gameObject); _tag = null; _tagOrdinal = -1; }
+                return;
+            }
+            if (_tag == null) _tag = NameTag.Attach(transform, "");
+            if (_tag == null) return;
+
+            int ord = BotOrdinal();
+            if (ord == _tagOrdinal) return;   // the string is rebuilt only when the number changes
+            _tagOrdinal = ord;
+            _tag.Set("BOT " + ord);
+        }
+
+        // 1, 2, 3... in an order every client agrees on, because it is decided by network id — the
+        // same number everywhere. No [Networked] field to add now and remember to remove with the
+        // label.
+        int BotOrdinal()
+        {
+            uint mine = Object != null ? Object.Id.Raw : 0u;
+            int n = 1;
+            foreach (var np in Live)
+                if (np != null && np != this && np.IsBot && np.Object != null && np.Object.Id.Raw < mine) n++;
+            return n;
         }
 
         // Team-coloured ground ring under every player; brightens/pulses for the ball owner.

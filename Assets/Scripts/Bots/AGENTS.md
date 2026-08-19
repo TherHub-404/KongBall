@@ -87,6 +87,12 @@ one believable profile first; levels later, if ever.
 None of this can be settled by reading: it needs someone playing against it and saying "too slow",
 "it always robs me", "it jitters". Expect several passes.
 
+## Debug scaffolding, currently in
+
+Bots wear a floating **BOT n** label in the match, numbered by network id so every client agrees. It
+was asked for explicitly and is meant to come out again: `Scripts/NameTag.cs`, plus
+`NetPlayer.UpdateNameTag`, its call in `Render`, and the two fields beside `_aimLine`.
+
 ## Status
 
 - [x] step 1 — `OwnerId` identifies an object; `NetPlayer.Live`; forfeit counts humans
