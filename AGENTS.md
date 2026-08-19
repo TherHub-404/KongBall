@@ -134,6 +134,9 @@ certezza falsa.
 Il nome è quello della persona, non il tuo: `luca/portiere-automatico`, `matteo/menu-classifica`. Mai
 maiuscole, mai underscore, mai accenti. Mai lavorare su `main`, su `dev`, o sul branch di un altro.
 
+Non è un'esortazione: il primo step della CI legge il nome del branch e **rifiuta la PR** se non
+torna. Meglio scegliere bene subito che rinominare dopo.
+
 ### 12. La PR va su `dev`. Mai su `main`.
 
 > "Matteo dice che non si pusha su `main` — apro una PR su `dev`."
@@ -166,8 +169,6 @@ Da cui due conseguenze da mettere in conto:
 
 ---
 
----
-
 ## Come si arriva sul telefono
 
 ```
@@ -184,6 +185,16 @@ Da cui due conseguenze da mettere in conto:
 
 Il check sulla PR non è una build: compila e basta, e ci mette pochi minuti. Serve a non scoprire un
 errore di sintassi venti minuti dopo, a build fatta — cosa che qui è già successa due volte.
+
+**Chi mergia.** La tua PR su `dev` la mergi tu, appena il check è verde: non c'è nessuna approvazione
+da aspettare, e non startene fermo ad aspettarne una. Quello che non fai da solo è la **promozione da
+`dev` a `main`**: quella la decide Matteo, perché è il momento in cui una cosa smette di essere in
+prova.
+
+**Dopo il merge.** La build parte da sola, ci mette una ventina di minuti, e poi TestFlight ci mette
+il suo a processarla. Se fallisce, **il guasto è tuo**: apri il log della Action, capisci cosa è
+successo, correggi sul tuo branch e riapri la PR. Non lasciarla rossa e non passare ad altro — su
+`dev` la build rotta la trova il prossimo che mergia, che perderà tempo a capire che non è sua.
 
 ---
 
