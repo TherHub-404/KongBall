@@ -73,12 +73,14 @@ does not have, the design is wrong.
 A bot that reacts in one tick and aims perfectly reads as a bot immediately. The levers, in rough
 order of how much they matter here:
 
-1. **intercept, don't chase** — run at where the ball will be, not where it is
-2. **commitment window** — decide, then stick with it for a beat; re-deciding every tick jitters
-3. **input ramp** — no thumb produces a step change in direction
-4. **reaction delay** on decisions, ~180–260 ms, never on movement
-5. **aim error** growing with distance, and the occasional real mistake
-6. **top speed** just under a human's
+1. **intercept, don't chase** — run at where the ball will be, not where it is — NOT DONE
+2. **commitment window** — decide, then stick with it for a beat; re-deciding every tick jitters —
+   done: one shot plan per possession, one challenge held to the end
+3. **input ramp** — no thumb produces a step change in direction — done, `steerRamp`
+4. **reaction delay** on decisions, ~180–260 ms, never on movement — done, `reactionSeconds`, and
+   applied to the change of MODE so the feet keep going while the head catches up
+5. **aim error** growing with distance, and the occasional real mistake — done, as an ANGLE
+6. **top speed** just under a human's — done, `topSpeed`
 
 Difficulty is not one number. Reaction, aim, speed, aggression and positional discipline are
 separate levers, and moving them together with a single slider is what makes bots feel cheap. Tune
@@ -86,6 +88,31 @@ one believable profile first; levels later, if ever.
 
 None of this can be settled by reading: it needs someone playing against it and saying "too slow",
 "it always robs me", "it jitters". Expect several passes.
+
+## Two things the pitch does that are not obvious
+
+**A harder shot goes higher, not further along the ground.** `NetBall` applies a fixed `liftRatio` to
+every kick, so the impulse sets speed and climb together: the ball leaves the foot at 0.6 m and gains
+roughly 0.32 x distance before gravity brings it back, whatever the power. A goal counts only below
+`goalHeight` (3 m). At full power the ball crosses the line at 3.1 m from ten metres out and 3.9 m
+from twenty — over the bar, never a goal. Power therefore has to stay in a narrow band (~0.45 to
+~0.72) and barely rise with distance. Writing `power = distance / range`, which is what it looks like
+it should be, makes every long shot sail over and reads as a completely different bug.
+
+**Height decides nothing about possession.** The ball picks the nearest player by FLAT distance, so
+jumping wins no header and costs a little air control. The bot jumps anyway, because somebody who
+never leaves the ground with the ball over their head does not look like somebody.
+
+## Tuning
+
+`BotBrain`'s fields carry `[Header]` and `[Tooltip]` for the reader only. The component is added at
+runtime by `BotDirector`, not authored on a prefab, so there is no inspector in the loop: **the
+numbers in the file are the numbers that ship.** Change them there.
+
+Conversion, measured against the geometry above with the current 6°–16° error: about 99% from 9 m,
+94% from 12, 77% from 16, 55% from 20. Deadly from close is correct — there is no keeper and the
+mouth is 6.8 m wide — and a shot from twenty is a coin flip, which is what makes shooting from
+distance a decision rather than a formality.
 
 ## Debug scaffolding, currently in
 
@@ -98,5 +125,8 @@ was asked for explicitly and is meant to come out again: `Scripts/NameTag.cs`, p
 - [x] step 1 — `OwnerId` identifies an object; `NetPlayer.Live`; forfeit counts humans
 - [x] step 2 — one bot, dumbest brain (seek ball, shoot at goal), reachable from ALLENAMENTO in the
       mode menu: a private invisible room of one human, `BotDirector` puts a bot on the other side
-- [ ] step 3 — believability: intercept, ramp, delay, commitment, team roles
+- [~] step 3 — believability. Done: challenge the carrier (push or grab, one committed act), speed
+      capped under a human's, steering ramp, reaction delay on decisions, jump, shot distance drawn
+      per possession, angular aim error with the occasional real miss.
+      Left: **intercept instead of chase**, and team roles once there is more than one bot
 - [ ] later — a bot prefab of its own, so bots can survive the master leaving and fill a real match
