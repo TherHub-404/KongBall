@@ -10,7 +10,7 @@ namespace KongBall
     // Each client owns (StateAuthority) its own player; NetPlayer moves it and NetworkTransform
     // replicates to everyone else.
     //
-    // Two ways into a match, and they are the SAME Fusion call with different arguments:
+    // Three ways into a match, and they are the SAME Fusion call with different arguments:
     //
     //   quick match   SessionName = null  -> Fusion documents this as "random session matching", and
     //                                        it lands on JoinRandomOrCreateRoom: the server puts you
@@ -18,6 +18,8 @@ namespace KongBall
     //   private room  SessionName = code  -> IsVisible = false, which Photon excludes from random
     //                                        matchmaking ("simulate private rooms"), so a code is
     //                                        the only way in.
+    //   practice      SessionName = code  -> the same private room, of one, with a code nobody is
+    //                                        told and a bot for company.
     //
     // The mode travels as a session property, which doubles as the matchmaking filter — filters are
     // exact-match, so a 1v1 player can never be dropped into a 2v2 room. PlayerCount carries the
@@ -62,10 +64,27 @@ namespace KongBall
         public static NetLauncher Instance { get; private set; }
 
         public MatchMode Mode { get; private set; } = MatchMode.OneVsOne;
+
+        // HUMANS the session holds — the Fusion PlayerCount and the matchmaking filter.
         public int RequiredPlayers => (int)Mode;
-        public string RoomCode { get; private set; }      // null for a quick match
+
+        // PLAYERS the pitch holds, humans and bots. The waiting room waits for this one: a practice
+        // match holds a single human and still needs two players before there is a match to play.
+        public int RequiredBodies => (int)Mode + Bots.BotDirector.Wanted(Mode);
+        public bool WithBots => Bots.BotDirector.Wanted(Mode) > 0;
+
+        // Photon's room size. The mode's own number for a real match; a practice room asks for TWO
+        // seats even though only one is ever filled, because a room of one is a corner of the SDK this
+        // game has no reason to be the first to try. It is invisible and named at random, so it is
+        // unreachable either way.
+        int SessionSize => Mode == MatchMode.Practice ? 2 : (int)Mode;
+
+        public string RoomCode { get; private set; }      // shown to the player; null unless it is theirs to read out
 
         NetworkRunner _runner;
+        // The name of the Photon session. Usually the same four letters as RoomCode, but a practice
+        // match has a name nobody is meant to see or type, so the two are not the same field.
+        string _sessionCode;
         bool _started;
         float _ensureCooldown;
         float _settleUntil;
@@ -103,17 +122,26 @@ namespace KongBall
             else MainMenu.Show();
         }
 
-        // --- the three ways in -------------------------------------------------------------------
+        // --- the ways in -------------------------------------------------------------------
 
         public bool StartQuickMatch(MatchMode mode)
         {
-            return Begin(mode, null, true, true, "CERCO UNA PARTITA");
+            return Begin(mode, null, false, true, true, "CERCO UNA PARTITA");
         }
 
         public bool CreatePrivateMatch(MatchMode mode)
         {
             string code = MainMenu.NewCode();
-            return Begin(mode, code, false, true, "STANZA " + code);
+            return Begin(mode, code, true, false, true, "STANZA " + code);
+        }
+
+        // Against a bot, alone. A room of ONE, invisible and named at random: Photon keeps invisible
+        // rooms out of random matchmaking, nobody can guess four letters they were never told, and
+        // PlayerCount 1 would turn them away even if they did. The code is never shown, because there
+        // is nothing a second player could do with it.
+        public bool StartPractice()
+        {
+            return Begin(MatchMode.Practice, MainMenu.NewCode(), false, false, true, "ALLENAMENTO");
         }
 
         // The mode comes from whoever created the room, so joining does not choose one.
@@ -124,7 +152,7 @@ namespace KongBall
         // the same four letters is looking for a different room.
         public bool JoinPrivateMatch(string code)
         {
-            return Begin(Mode, MainMenu.Normalise(code), false, false, "ENTRO NELLA STANZA " + code);
+            return Begin(Mode, MainMenu.Normalise(code), true, false, false, "ENTRO NELLA STANZA " + code);
         }
 
         // The room a code stands for. Two builds that disagree about the netcode must not be able to
@@ -134,13 +162,14 @@ namespace KongBall
             return code == null ? null : "v" + ProtocolVersion + "-" + code;
         }
 
-        bool Begin(MatchMode mode, string code, bool visible, bool mayCreate, string message)
+        bool Begin(MatchMode mode, string code, bool showCode, bool visible, bool mayCreate, string message)
         {
             if (_started) return false;
             if (code != null && code.Length != MainMenu.CodeLength) return false;
             _started = true;
             Mode = mode;
-            RoomCode = code;
+            _sessionCode = code;
+            RoomCode = showCode ? code : null;
             _leaveAt = 0f;
             _notice = null;
             _waitingShown = false;
@@ -174,8 +203,8 @@ namespace KongBall
             var result = await _runner.StartGame(new StartGameArgs
             {
                 GameMode = GameMode.Shared,
-                SessionName = SessionFor(RoomCode),
-                PlayerCount = (int)Mode,
+                SessionName = SessionFor(_sessionCode),
+                PlayerCount = SessionSize,
                 SessionProperties = props,
                 IsVisible = visible,
                 IsOpen = true,
@@ -289,6 +318,11 @@ namespace KongBall
                 runner.Spawn(matchPrefab, Vector3.zero, Quaternion.identity);
                 Debug.Log("[Net] Master spawned MatchController");
             }
+
+            // Bots are shared objects like any other, so they are the master's to create and they
+            // belong here — behind the same settle wait, for the same reason: a client that becomes
+            // master before the room has replicated to it must not conclude that anything is missing.
+            Bots.BotDirector.Ensure(runner, playerPrefab, Mode);
         }
 
         // Master-client reassignment is not guaranteed to have happened by the time OnPlayerLeft
@@ -329,9 +363,12 @@ namespace KongBall
             // this peer later becomes master its idea of the match size is the room's, not the
             // default it happened to start with. Only a real seat count is adopted: a stray value
             // would cast into a MatchMode that means nothing.
+            //
+            // HumanSeats, not Seats: a MatchMode counts people, and Seats counts everyone on the
+            // pitch. The two differ the moment a mode brings bots of its own.
             if (RoomCode != null && mc != null
-                && (mc.Seats == (int)MatchMode.OneVsOne || mc.Seats == (int)MatchMode.TwoVsTwo))
-                Mode = (MatchMode)mc.Seats;
+                && (mc.HumanSeats == (int)MatchMode.OneVsOne || mc.HumanSeats == (int)MatchMode.TwoVsTwo))
+                Mode = (MatchMode)mc.HumanSeats;
 
             // No controller yet counts as waiting, deliberately. It is the master's job to spawn one,
             // and if that never happens the player would otherwise sit in an empty arena with no
