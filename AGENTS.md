@@ -17,7 +17,7 @@ build, e ti si rompe uguale che tu sia il proprietario o no. Un'eccezione lì no
 solo un guasto in più.
 
 > Scritto in italiano perché parla di processo e di persone, e le persone qui parlano italiano.
-> **Il codice e i commenti nel codice si scrivono in inglese.** È la regola 19.
+> **Il codice e i commenti nel codice si scrivono in inglese.** È la regola 20.
 
 ---
 
@@ -220,7 +220,17 @@ incidente, anche in totale buona fede. Se la CI ti serve diversa, **scrivilo nel
 È quello che finisce sull'App Store. Se una feature ha davvero bisogno di cambiarne uno, va scritto
 **in cima alla PR**, in chiaro.
 
-### 18. Dipendenze nuove, e gli invarianti di rete.
+### 18. I secret non si cancellano. `DIST_CERT_BASE64` in particolare.
+
+GitHub non fa rileggere un secret: si scrive e basta. E `DIST_CERT_BASE64` è un `.p12` esportato da un
+portachiavi macOS — di questo progetto **non esiste una copia da nessuna parte**, e nessuno qui ha un
+Mac. Cancellarlo, o sovrascriverlo con un valore sbagliato, vuol dire **niente più build** finché
+qualcuno non mette le mani su un Mac.
+
+Non è un consiglio di sicurezza, è un punto di rottura singolo. Nessuno tocca i secret per fare
+ordine.
+
+### 19. Dipendenze nuove, e gli invarianti di rete.
 
 Ogni pacchetto entra nella build iOS, pesa e va mantenuto. E due invarianti che sembrano dettagli:
 
@@ -233,11 +243,11 @@ Ogni pacchetto entra nella build iOS, pesa e va mantenuto. E due invarianti che 
 
 # Parte 4 — Come si scrive, qui
 
-### 19. Il codice e i commenti sono in inglese. I commit e le PR in italiano.
+### 20. Il codice e i commenti sono in inglese. I commit e le PR in italiano.
 
 La storia di git e le PR le leggono le persone di questo gruppo. Il codice lo legge chiunque.
 
-### 20. I commenti spiegano *perché*, mai *cosa*.
+### 21. I commenti spiegano *perché*, mai *cosa*.
 
 Un commento che dice "incrementa il contatore" non serve a nessuno. Un commento che dice quale guasto
 sta prevenendo quella riga vale tutto il file. Guarda il codice esistente prima di scrivere il tuo:
@@ -245,7 +255,7 @@ questo repo ha una voce precisa, e ci si adegua invece di inventarne un'altra.
 
 Quando risolvi un bug vero, **lascia scritto il bug nel commento.** È così che non torna.
 
-### 21. Il commit e la PR dicono cosa hai deciso e cosa hai lasciato fuori.
+### 22. Il commit e la PR dicono cosa hai deciso e cosa hai lasciato fuori.
 
 Non l'elenco dei file toccati: quello si vede dal diff. Servono le scelte, le conseguenze che hai
 accettato, e le cose che non hai coperto. Una PR che non dichiara i propri buchi se li porta in
