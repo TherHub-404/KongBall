@@ -64,9 +64,37 @@ jobs:
     # secret Apple spostati dentro. Finche' non esiste, GitHub lo crea implicitamente senza regole e
     # i secret restano quelli del repo: il workflow funziona lo stesso, ma senza la protezione.
     environment: testflight
+    # Narrowed on purpose: the only things this job needs the token for are cloning and asking which
+    # branch a pull request came from.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # Di chi e' questa build. Una build nasce da UN merge su `dev`, quindi dietro c'e' sempre una
+      # pull request, e quella pull request ha un branch della forma nome/feature: e' esattamente
+      # "autore e feature". Il numero della PR e' in coda al messaggio dello squash — "(#19)" — e da
+      # li' si risale al branch.
+      #
+      # Non fa MAI fallire una build: e' un timbro. Se qualcosa non si risolve si ripiega sul nome del
+      # ref, e nel caso peggiore il file resta vuoto e il menu semplicemente non mostra niente.
+      - name: Timbro della build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          STAMP=""
+          PR="$(git log -1 --pretty=%s | sed -n 's/.*(#\([0-9][0-9]*\))[[:space:]]*$/\1/p')"
+          if [ -n "$PR" ]; then
+            STAMP="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .head.ref 2>/dev/null || true)"
+          fi
+          if [ -z "$STAMP" ]; then STAMP="$GITHUB_REF_NAME"; fi
+          printf '%s' "$STAMP" > Assets/Resources/BuildStamp.txt
+          echo "Timbro della build: '$STAMP'"
 
       # Unity's asset import cache. The first run is cold and slow; later runs restore it
       # and skip reimporting every model and texture, which is most of the build time.
