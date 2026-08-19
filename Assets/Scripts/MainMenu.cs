@@ -110,6 +110,7 @@ namespace KongBall
             Ui.NewOverlayCanvas(gameObject, SortingOrder);
 
             BuildLogo();
+            BuildStampLabel();
 
             BuildHome();
             BuildModes();
@@ -159,6 +160,33 @@ namespace KongBall
             var tex = Resources.Load<Texture2D>("Menu/Logo");
             if (tex == null) { Debug.LogWarning("[Menu] Resources/Menu/Logo missing"); return null; }
             return Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+        }
+
+        // Who made this build, in the corner: the branch of the pull request that produced it.
+        //
+        // Top-left, with the same inset as the in-match MENU button. That is not taste — the game is
+        // landscape only, so the notch sits on one long edge and the home indicator along the bottom,
+        // and that corner is the one placement in this project already proven on a real device.
+        //
+        // It hangs off the menu ROOT rather than off a panel, so it is also there on the waiting
+        // screen: that is where somebody is most likely to wonder which build they are on. It costs
+        // nothing when the file is empty, which is the case for anything not built by the pipeline.
+        void BuildStampLabel()
+        {
+            string label = BuildStamp.Label;
+            if (string.IsNullOrEmpty(label)) return;
+
+            var t = Ui.NewText("BuildStamp", transform, 20);
+            if (t == null) return;
+            t.text = label;
+            t.color = new Color(Ink.r, Ink.g, Ink.b, 0.55f);   // present, not shouting
+            t.alignment = TextAnchor.UpperLeft;
+
+            var rt = t.rectTransform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.sizeDelta = new Vector2(520f, 28f);
+            rt.anchoredPosition = new Vector2(26f, -26f);
         }
 
         void BuildHome()

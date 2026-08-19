@@ -191,6 +191,12 @@ da aspettare, e non startene fermo ad aspettarne una. Quello che non fai da solo
 `dev` a `main`**: quella la decide Matteo, perché è il momento in cui una cosa smette di essere in
 prova.
 
+**Di chi è la build che hai in mano.** In alto a sinistra nel menu compare `autore · feature`, preso
+dal branch della pull request che ha fatto partire quella build. Se non c'è niente, quella build non
+è uscita dalla pipeline. Il file `Assets/Resources/BuildStamp.txt` è committato **vuoto** e lo
+riempie la CI: non riempirlo a mano, un timbro che mente su chi ha fatto la build è peggio che non
+averlo.
+
 **Dopo il merge.** La build parte da sola, ci mette una ventina di minuti, e poi TestFlight ci mette
 il suo a processarla. Se fallisce, **il guasto è tuo**: apri il log della Action, capisci cosa è
 successo, correggi sul tuo branch e riapri la PR. Non lasciarla rossa e non passare ad altro — su
