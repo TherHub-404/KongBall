@@ -211,9 +211,13 @@ riempie la CI: non riempirlo a mano, un timbro che mente su chi ha fatto la buil
 averlo.
 
 **Dopo il merge.** La build parte da sola, ci mette una ventina di minuti, e poi TestFlight ci mette
-il suo a processarla. Se fallisce, **il guasto è tuo**: apri il log della Action, capisci cosa è
-successo, correggi sul tuo branch e riapri la PR. Non lasciarla rossa e non passare ad altro — su
-`dev` la build rotta la trova il prossimo che mergia, che perderà tempo a capire che non è sua.
+il suo a processarla. Il gruppo Telegram riceve un messaggio in entrambi i casi: quando la build è
+pronta, con l'elenco di cosa è cambiato dall'ultima, e quando è **rotta**, col tuo nome sopra.
+
+Se fallisce, **il guasto è tuo**: apri il log della Action, capisci cosa è successo, correggi sul tuo
+branch e riapri la PR. Non lasciarla rossa e non passare ad altro — su `dev` la build rotta la trova
+il prossimo che mergia, che perderà tempo a capire che non è sua. Il messaggio in gruppo esiste
+perché non ci sia bisogno di scoprirlo così.
 
 ---
 

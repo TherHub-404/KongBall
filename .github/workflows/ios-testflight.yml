@@ -82,6 +82,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read        # per sapere qual era l'ultima build riuscita, e da li' il changelog
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -270,3 +271,22 @@ jobs:
       - name: Clean up keychain
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
+
+      # Un messaggio in gruppo: cosa e' cambiato rispetto all'ultima build riuscita, e di chi e'.
+      #
+      # `success() || failure()` e non `always()`: una build annullata non merita un messaggio, ma una
+      # ROTTA si'. Su un `dev` condiviso e' meta' del valore — AGENTS.md dice che una build rossa e' di
+      # chi ha mergiato e va sistemata subito, e un ping in gruppo lo rende immediato invece di
+      # lasciarla trovare al prossimo che mergia.
+      #
+      # Non puo' far fallire la build: lo script trasforma qualunque problema in un avviso.
+      - name: Avvisa il gruppo
+        if: success() || failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          BUILD_OUTCOME: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW_FILE: ios-testflight.yml
+        run: python3 .github/scripts/telegram_notify.py
