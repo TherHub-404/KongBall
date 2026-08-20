@@ -29,6 +29,9 @@ jobs:
   check:
     runs-on: macos-26
     timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,13 +54,56 @@ jobs:
           fi
           echo "Branch '$BRANCH' ok."
 
+      # Una pull request che tocca soltanto documentazione non puo' rompere la compilazione, e farle
+      # aspettare sette minuti di Unity ruba il runner a chi ne ha davvero bisogno.
+      #
+      # Ma il job deve girare SEMPRE e riportare il suo esito: `check` e' un controllo obbligatorio
+      # nel ruleset, e un workflow saltato da `paths-ignore` non riporta NIENTE — la pull request
+      # resterebbe bloccata per sempre in attesa di una spunta che non arriva mai. Quindi non si salta
+      # il job: si saltano gli step costosi, e la spunta arriva comunque in pochi secondi.
+      #
+      # Questo step decide anche il caso del fork, che prima era duplicato in tre `if` identici: una
+      # pull request da un fork non riceve le credenziali Unity, quindi la compilazione non e'
+      # saltata per scelta ma perche' non e' possibile — e ora il motivo e' scritto nel log una volta
+      # sola, dove lo si legge.
+      - name: Serve Unity?
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+          say() { echo "unity=$1" >> "$GITHUB_OUTPUT"; echo "$2"; }
+
+          if [ "$EVENT" != "pull_request" ]; then
+            say true "Non e' una pull request: compilo."; exit 0
+          fi
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            say false "Pull request da un fork: GitHub non le consegna le credenziali Unity, quindi la compilazione non e' possibile. Restano i controlli sugli asset."; exit 0
+          fi
+
+          FILES="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename' 2>/dev/null || true)"
+          if [ -z "$FILES" ]; then
+            say true "Non ho l'elenco dei file: compilo per prudenza."; exit 0
+          fi
+          echo "File toccati:"; printf '%s\n' "$FILES" | sed 's/^/  /'
+          if printf '%s\n' "$FILES" | grep -Eq '^(Assets/|Packages/|ProjectSettings/)'; then
+            say true "Toccato il progetto Unity: compilo."
+          else
+            say false "Nessun file del progetto Unity: salto la compilazione."
+          fi
+
       # Seconds, and no Unity involved. Every one of these is a mistake that actually shipped here:
       # a script committed without its .meta, a duplicated GUID, a Resources.Load name with no asset
       # behind it — which fails silently at runtime and looks like a missing model.
       - name: Asset sanity
         run: python3 .github/scripts/asset_sanity.py
 
+      # Anche la cache: e' grossa, e ripristinarla per poi non compilare e' tempo di runner buttato.
       - name: Cache Unity Library
+        if: steps.scope.outputs.unity == 'true'
         uses: actions/cache@v4
         with:
           path: Library
@@ -66,11 +112,11 @@ jobs:
             Library-iOS-
             Library-
 
-      # Everything below needs the Unity credentials, which GitHub does not hand to a pull request
-      # opened from a fork. Skipped rather than failed there, so an outside contribution still gets
-      # the asset checks instead of a red tick nobody can act on.
+      # Tutto quello che segue gira solo se lo step "Serve Unity?" ha detto di si'. Saltato e non
+      # fallito: una PR di sola documentazione, o da un fork, ottiene comunque i controlli sugli asset
+      # e una spunta verde onesta, invece di un tick rosso su cui nessuno puo' agire.
       - name: Install Unity
-        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.scope.outputs.unity == 'true'
         uses: buildalon/unity-setup@v2
         with:
           version-file: 'ProjectSettings/ProjectVersion.txt'
@@ -82,7 +128,7 @@ jobs:
       # TestFlight build ever overlap and the activation is refused, that is why — the fix is to
       # serialise the two workflows on a shared concurrency group.
       - name: Activate Unity license
-        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.scope.outputs.unity == 'true'
         uses: buildalon/activate-unity-license@v2
         with:
           license: 'Personal'
@@ -90,7 +136,7 @@ jobs:
           password: ${{ secrets.UNITY_PASSWORD }}
 
       - name: Compile scripts
-        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        if: steps.scope.outputs.unity == 'true'
         run: |
           set -euo pipefail
           UNITY="$UNITY_EDITOR_PATH"
