@@ -131,6 +131,13 @@ def main():
         problemi.append("%s deve essere vuoto in repo: lo riempie la pipeline. Un timbro che mente "
                         "su chi ha fatto la build e' peggio di nessun timbro." % stamp)
 
+    # Stessa regola, motivo diverso: un'impronta committata resterebbe ferma mentre il netcode cambia,
+    # e due build incompatibili tornerebbero a incontrarsi — che e' esattamente cio' che previene.
+    netid = "Assets/Resources/NetcodeId.txt"
+    if os.path.exists(netid) and (testo(netid) or "").strip():
+        problemi.append("%s deve essere vuoto in repo: lo calcola la pipeline a ogni build. "
+                        "Committato, resterebbe fermo mentre il netcode cambia." % netid)
+
     for path, atteso in FLAG_ATTESI.items():
         contenuto = testo(path)
         if contenuto is None:

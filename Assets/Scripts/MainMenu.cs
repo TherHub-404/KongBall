@@ -176,6 +176,12 @@ namespace KongBall
             string label = BuildStamp.Label;
             if (string.IsNullOrEmpty(label)) return;
 
+            // Accanto al timbro, l'identita' di rete. Serve a una domanda precisa che due persone si
+            // fanno guardandosi in faccia: "perche' non ci troviamo?". Con questo numero la risposta
+            // e' leggibile — se differisce, le due build non possono incontrarsi ed e' voluto.
+            string rete = NetLauncher.Netcode;
+            if (!string.IsNullOrEmpty(rete)) label += "\n" + rete;
+
             var t = Ui.NewText("BuildStamp", transform, 20);
             if (t == null) return;
             t.text = label;
@@ -185,7 +191,7 @@ namespace KongBall
             var rt = t.rectTransform;
             rt.anchorMin = rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
-            rt.sizeDelta = new Vector2(520f, 28f);
+            rt.sizeDelta = new Vector2(520f, 52f);   // due righe: timbro e identita' di rete
             rt.anchoredPosition = new Vector2(26f, -26f);
         }
 
