@@ -52,6 +52,10 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 
+# === Python degli script di CI ===
+__pycache__/
+*.pyc
+
 # === OS / IDE ===
 .DS_Store
 .vs/
