@@ -64,7 +64,11 @@ risposta è iniettarlo alla build, non scriverlo: `.github/scripts/photon_appid.
 copiare.
 
 Vale **di più** per il proprietario, non di meno: una fuga fatta da lui è pubblica esattamente come
-le altre. In questo repo è già successo con l'AppId Photon, ed è ancora lì.
+le altre. In questo repo è già successo, con l'AppId Photon: è stato sostituito, ma quello vecchio
+resta nella storia di git per sempre — non si ripulisce una fuga, si revoca la cosa che è uscita.
+
+`PhotonAppSettings.asset` ha l'AppId **vuoto** ed è giusto così: lo mette la pipeline dal secret. Non
+riempirlo per far funzionare qualcosa in locale, e soprattutto non ricommittarlo.
 
 ### 3. I valori serializzati nei prefab vincono sui default nel codice.
 

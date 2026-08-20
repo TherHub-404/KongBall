@@ -9,10 +9,10 @@ Perche' qui e non in C#: il player deve trovare il valore GIA' importato. Riscri
 che Unity si apra, l'import lo prende come qualsiasi altra modifica e non c'e' nessuna asset
 pipeline da convincere a salvare al momento giusto.
 
-Stato attuale (fase 1): se il secret non c'e', avvisa e lascia il valore committato, cosi' la
-pipeline continua a funzionare esattamente come prima. Quando l'AppId sara' stato ruotato e il
-secret configurato, il valore nel repo va svuotato e questo script deve diventare BLOCCANTE — una
-build senza AppId non si connette a niente, e un fallimento chiaro e' meglio di un gioco muto.
+Il valore nel repo ora e' VUOTO, quindi questo script e' l'unica fonte dell'AppId e senza il secret
+non c'e' niente da spedire. Percio' e' bloccante: una build senza AppId compila, si installa, si
+apre e non si connette a niente — un fallimento in CI, che si legge, e' molto meglio di un gioco
+muto sul telefono di qualcuno.
 """
 
 import os
@@ -26,10 +26,11 @@ FIELD = re.compile(r"(?m)^(\s*AppIdFusion:).*$")
 def main():
     app_id = os.environ.get("PHOTON_APP_ID", "").strip()
     if not app_id:
-        # ::warning:: e non ::error:: finche' il valore committato e' ancora quello buono.
-        print("::warning::PHOTON_APP_ID non configurato: resta il valore committato, "
-              "che e' leggibile da chiunque perche' la repo e' pubblica.")
-        return 0
+        print("::error::PHOTON_APP_ID non configurato. Il valore nel repo e' vuoto di proposito, "
+              "quindi questa build non saprebbe a quale app Photon collegarsi: si fermerebbe qui "
+              "invece di finire sul telefono di qualcuno senza rete. "
+              "Settings > Secrets and variables > Actions > PHOTON_APP_ID.")
+        return 1
 
     with open(ASSET, encoding="utf-8") as f:
         text = f.read()
