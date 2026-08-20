@@ -145,9 +145,22 @@ Prima di toccarle, leggi la fonte. Non ricordarti l'API.
   Fusion, con firme e descrizioni: cercare lì costa dieci secondi e chiude la questione. Anche i DLL
   si possono leggere, e sono stati letti — i valori dei `NetworkObjectFlags` vengono dai metadati di
   `Fusion.Runtime.dll`, non da un'intuizione.
-- **La documentazione online quando l'SDK non basta**, e in particolare per capire cosa vale in
-  *Shared Mode* e cosa no: buona parte delle API di Fusion che trovi cercando riguarda il
-  client-server, e qui non esiste (vedi la 7).
+- **Cerca su internet**: documentazione ufficiale, note di rilascio, risposte della community. Non è
+  un ripiego per quando l'SDK non basta, è l'altra metà del lavoro — l'SDK ti dice *come si chiama un
+  metodo*, il web ti dice *perché* e *quando* si usa, e quale trappola ha trovato prima di te qualcun
+  altro.
+
+  Ma su Fusion i risultati vanno filtrati due volte, e sono le due derive che ti fanno scrivere
+  codice plausibile e sbagliato:
+
+  1. **Versione.** Qui c'è Fusion **2**. Buona parte di ciò che trovi è di Fusion 1, con API diverse e
+     lo stesso nome. Se una pagina non dice quale versione documenta, non ti serve.
+  2. **Modalità.** Qui è **Shared Mode**. La maggior parte degli esempi è client-server: `OnInput`,
+     gli input struct, l'input authority, la resimulazione. Qui non esistono (vedi la 7), e adottarli
+     produce codice che compila e non fa niente.
+
+  Se dopo i due filtri resta poco, è un'informazione anche quella: vuol dire che sei in un angolo poco
+  battuto, ed è il momento di leggere l'SDK e di dirlo nella PR.
 - **Scrivi nella PR dove hai controllato.** "Verificato in `Fusion.Realtime.xml`: `op_Implicit(String)`"
   vale. "Dovrebbe funzionare così" no.
 
@@ -377,8 +390,9 @@ Cita la regola, non fare il poliziotto. Serve a far capire perché, non a chiude
 - "Matteo dice che qui non c'è l'Editor Unity, quindi il menu si costruisce da codice come gli altri."
 - "Questa chiave non la posso committare: la repo è pubblica, e Matteo la fa passare dai secret."
 - "Le pipeline le tocca solo Matteo: ti scrivo cosa servirebbe e glielo giri."
-- "Questa tocca Fusion: prima leggo la documentazione dell'SDK che sta nel repo, poi ti dico come si
-  fa. Qui una cosa che sembra giusta e non lo è si scopre sul telefono."
+- "Questa tocca Fusion: prima leggo la documentazione dell'SDK nel repo e cerco online, poi ti dico
+  come si fa. Qui una cosa che sembra giusta e non lo è si scopre sul telefono."
+- "Quello che ho trovato online è di Fusion 1 e in client-server: qui non vale, quindi vado sull'SDK."
 - "Non l'ho provato sul telefono, quindi non ti dico che funziona — te lo dico come 'compila e
   dovrebbe'."
 
