@@ -16,12 +16,29 @@ namespace KongBall
     {
         static string _label;
         static bool _loaded;
+        static string _netcode;
+        static bool _netLoaded;
 
         // "luca · portiere-automatico", or null when there is nothing to show.
         //
         // The branch is kept verbatim rather than prettified into "Portiere Automatico": it is the
         // string you type to find the work behind the build, and a stamp you cannot search with is
         // half a stamp.
+        // L'impronta del netcode di questa build, o null se non c'e'. Qui si LEGGE soltanto: cosa
+        // farne lo decide NetLauncher. "Quale build sono" e' una cosa sola e sta in un posto solo.
+        public static string NetcodeId
+        {
+            get
+            {
+                if (_netLoaded) return _netcode;
+                _netLoaded = true;
+                var asset = Resources.Load<TextAsset>("NetcodeId");
+                string raw = asset != null ? asset.text.Trim() : null;
+                _netcode = string.IsNullOrEmpty(raw) ? null : raw;
+                return _netcode;
+            }
+        }
+
         public static string Label
         {
             get

@@ -134,6 +134,12 @@ jobs:
       # Finche' il secret non esiste, avvisa e lascia il valore committato: la pipeline continua a
       # funzionare come prima. Quando l'AppId sara' stato ruotato e il secret configurato, il valore
       # nel repo va svuotato e lo script diventa bloccante.
+      # L'impronta del netcode: due build si incontrano solo se questa combacia. Calcolata dai file
+      # che decidono la compatibilita' di rete e non dal commit, cosi' due build che differiscono solo
+      # per il menu possono ancora giocare insieme.
+      - name: Impronta del netcode
+        run: python3 .github/scripts/netcode_id.py
+
       - name: AppId Photon
         env:
           PHOTON_APP_ID: ${{ secrets.PHOTON_APP_ID }}

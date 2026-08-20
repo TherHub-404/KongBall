@@ -53,10 +53,24 @@ namespace KongBall
         [Header("Legacy scene UI — the blue/red panel, now replaced by MainMenu")]
         public GameObject teamPanel;
 
-        // Bumped whenever the netcode changes in a way that makes old and new clients incompatible.
-        // Travels as a matchmaking filter, so mismatched builds simply never meet instead of meeting
-        // and misbehaving. This is NOT the build number: that would split the population every build.
+        // Il RIPIEGO, ora che l'identita' di rete la calcola la pipeline. Serve a una build fatta
+        // fuori dalla CI, e resta come manopola manuale se un giorno servisse spaccare la popolazione
+        // di proposito.
         public const int ProtocolVersion = 1;
+
+        // L'identita' di rete di QUESTA build, e cio' che decide chi puo' incontrare chi.
+        //
+        // Viaggia in due modi, perche' le strade di ingresso sono due: come filtro di matchmaking per
+        // la partita rapida — i filtri sono a corrispondenza esatta, quindi due identita' diverse non
+        // si incontrano mai — e dentro il NOME della sessione per le stanze private, perche' un join
+        // per nome ignora i filtri: chi cerca lo stesso codice con un'altra identita' sta cercando
+        // un'altra stanza.
+        //
+        // Prima era un intero da alzare a mano. Con una persona funzionava; con quattro che buildano
+        // piu' volte al giorno nessuno se lo ricorda, e due build con netcode diverso finiscono nella
+        // stessa stanza a vedere cose incoerenti — che sembra un bug del gioco e non un
+        // disallineamento.
+        public static string Netcode => BuildStamp.NetcodeId ?? ("v" + ProtocolVersion);
 
         const string ModeKey = "m";
         const string ProtocolKey = "v";
@@ -146,10 +160,10 @@ namespace KongBall
 
         // The mode comes from whoever created the room, so joining does not choose one.
         //
-        // Note the version does NOT protect this path the way it protects matchmaking: session
+        // Note the identity does NOT protect this path the way it protects matchmaking: session
         // properties are filters only for a RANDOM join, and joining by name ignores them. That is
-        // why the protocol version is baked into the session name instead — an old build looking for
-        // the same four letters is looking for a different room.
+        // why the netcode identity is baked into the session name instead — a build with different
+        // netcode looking for the same four letters is looking for a different room.
         public bool JoinPrivateMatch(string code)
         {
             return Begin(Mode, MainMenu.Normalise(code), true, false, false, "ENTRO NELLA STANZA " + code);
@@ -159,7 +173,7 @@ namespace KongBall
         // reach each other's rooms even with the right code.
         static string SessionFor(string code)
         {
-            return code == null ? null : "v" + ProtocolVersion + "-" + code;
+            return code == null ? null : Netcode + "-" + code;
         }
 
         bool Begin(MatchMode mode, string code, bool showCode, bool visible, bool mayCreate, string message)
@@ -192,7 +206,7 @@ namespace KongBall
             var props = new Dictionary<string, SessionProperty>
             {
                 { ModeKey, (int)Mode },
-                { ProtocolKey, ProtocolVersion },
+                { ProtocolKey, Netcode },
             };
 
             // MatchmakingMode is left at its default, FillRoom, which the SDK documents as making
@@ -236,7 +250,11 @@ namespace KongBall
             if (RoomCode != null)
             {
                 if (reason == ShutdownReason.GameNotFound)
-                    return "NESSUNA STANZA CON IL CODICE\n" + RoomCode;
+                    // La causa piu' probabile ora non e' un codice sbagliato: e' che i due abbiano
+                    // build con netcode diverso, e quindi stiano cercando due stanze differenti con
+                    // lo stesso nome breve. Detto qui, perche' e' il momento in cui uno se lo chiede.
+                    return "NESSUNA STANZA CON IL CODICE " + RoomCode
+                         + "\nCONTROLLATE DI AVERE LA STESSA VERSIONE\n" + Netcode;
                 if (reason == ShutdownReason.GameClosed)
                     return "LA PARTITA E' GIA' INIZIATA";
                 if (reason == ShutdownReason.GameIsFull)
@@ -411,8 +429,9 @@ namespace KongBall
 
             if (Time.time >= _waitUntil)
             {
-                _notice = RoomCode != null ? "NESSUNO SI E' UNITO ALLA STANZA\n" + RoomCode
-                                           : "NESSUN AVVERSARIO TROVATO";
+                _notice = RoomCode != null
+                    ? "NESSUNO SI E' UNITO ALLA STANZA\n" + RoomCode
+                    : "NESSUN AVVERSARIO TROVATO\nSI GIOCA CON CHI HA LA STESSA VERSIONE\n" + Netcode;
                 Debug.Log("[Net] waiting room timed out after " + waitTimeoutSeconds + "s");
                 LeaveMatch();
             }

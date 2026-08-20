@@ -233,10 +233,16 @@ da aspettare, e non startene fermo ad aspettarne una. Quello che non fai da solo
 prova.
 
 **Di chi è la build che hai in mano.** In alto a sinistra nel menu compare `autore · feature`, preso
-dal branch della pull request che ha fatto partire quella build. Se non c'è niente, quella build non
-è uscita dalla pipeline. Il file `Assets/Resources/BuildStamp.txt` è committato **vuoto** e lo
-riempie la CI: non riempirlo a mano, un timbro che mente su chi ha fatto la build è peggio che non
-averlo.
+dal branch della pull request che ha fatto partire quella build, e sotto **l'identità di rete**. Se
+non c'è niente, quella build non è uscita dalla pipeline. `BuildStamp.txt` e `NetcodeId.txt` sono
+committati **vuoti** e li riempie la CI: non riempirli a mano.
+
+**Due build si incontrano solo se hanno la stessa identità di rete.** È l'impronta dei file che
+decidono la compatibilità — `Scripts/Net`, `Scripts/Bots`, i prefab di rete, la configurazione di
+Fusion — e non del commit, così due build che differiscono solo per il menu possono ancora giocare
+insieme. Se tu e un altro non riuscite a trovarvi, confrontate quel numero nel menu: se differisce è
+voluto, e la soluzione è che uno dei due installi la build dell'altro. Vale sia per la partita rapida
+sia per le stanze private, dove l'identità è cucita nel nome della sessione.
 
 **Dopo il merge.** La build parte da sola, ci mette una ventina di minuti, e poi TestFlight ci mette
 il suo a processarla. Il gruppo Telegram riceve un messaggio in entrambi i casi: quando la build è
@@ -281,8 +287,10 @@ Ogni pacchetto entra nella build iOS, pesa e va mantenuto. E due invarianti che 
 
 - `NetPlayer.prefab` è `DestroyWhenStateAuthorityLeaves` — il tuo avatar deve sparire quando esci.
   È la ragione per cui i bot oggi vivono solo in allenamento.
-- `NetLauncher.ProtocolVersion` è il filtro del matchmaking. Si alza quando la rete cambia in modo
-  incompatibile, e **non** a ogni build: alzarlo divide i giocatori in due popolazioni.
+- `NetLauncher.Netcode` è ciò che decide chi incontra chi, e lo calcola la pipeline. Non trasformarlo
+  in un valore fisso "per fare una prova": due build incompatibili tornerebbero a incontrarsi, ed è
+  il guasto che sembra un bug del gioco. `ProtocolVersion` resta solo come ripiego per una build
+  fatta fuori dalla CI.
 
 ---
 
