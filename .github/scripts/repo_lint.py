@@ -30,7 +30,10 @@ SEGRETI = [
 
 # File che non devono stare nell'indice di git. .gitignore li copre gia', ma `git add -f` lo scavalca
 # e un agent frettoloso lo fa.
-VIETATI = re.compile(r"(?:^|/)(?:Library|Temp|Builds?|Logs)/|\.(?:csproj|sln|p8|p12|mobileprovision)$|(?:^|/)\.DS_Store$")
+VIETATI = re.compile(
+    r"(?:^|/)(?:Library|Temp|Builds?|Logs|__pycache__)/"
+    r"|\.(?:csproj|sln|p8|p12|mobileprovision|pyc)$"
+    r"|(?:^|/)\.DS_Store$")
 
 # --- 2. flag dei NetworkObject ------------------------------------------------------------------
 #
