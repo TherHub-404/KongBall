@@ -107,6 +107,7 @@ def messaggio(esito, stamp, righe, run_url):
 
 
 def invia(token, chat_id, testo):
+    """Ritorna il titolo della chat in cui e' finito il messaggio, per confermarlo nel log."""
     corpo = urllib.parse.urlencode({
         "chat_id": chat_id,
         "text": testo,
@@ -116,7 +117,8 @@ def invia(token, chat_id, testo):
     url = "https://api.telegram.org/bot%s/sendMessage" % token
     req = urllib.request.Request(url, data=corpo)
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        return r.status
+        risposta = json.load(r)
+    return risposta.get("result", {}).get("chat", {}).get("title") or "?" 
 
 
 def main():
@@ -156,12 +158,21 @@ def main():
         return 0
 
     try:
-        invia(token, chat_id, testo)
-        print("Notifica Telegram inviata (%d righe di changelog)." % len(righe))
+        dove = invia(token, chat_id, testo)
+        print("Notifica Telegram inviata a '%s' (%d righe di changelog)." % (dove, len(righe)))
     except urllib.error.HTTPError as e:
-        # SOLO codice e motivo. str(e) e e.url contengono l'URL, e l'URL contiene il TOKEN: in una
-        # repo pubblica quel log lo legge chiunque.
-        warn("Telegram ha risposto %s %s." % (e.code, e.reason))
+        # Codice, motivo e la `description` di Telegram — che e' l'unica cosa che dice DAVVERO cosa
+        # non va ("chat not found", "can't parse entities", "bot was kicked..."). Senza, un errore
+        # costa una seconda build per capirlo.
+        #
+        # Ma mai str(e) ne' e.url: contengono l'URL, e l'URL contiene il TOKEN. In una repo pubblica
+        # quel log lo legge chiunque.
+        motivo = ""
+        try:
+            motivo = " — " + str(json.load(e).get("description", ""))
+        except Exception:
+            pass
+        warn("Telegram ha risposto %s %s%s." % (e.code, e.reason, motivo))
     except Exception as e:
         warn("Notifica Telegram non inviata (%s)." % type(e).__name__)
     return 0
