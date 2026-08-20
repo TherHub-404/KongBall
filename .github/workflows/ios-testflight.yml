@@ -88,6 +88,23 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Unity's asset import cache. The first run is cold and slow; later runs restore it
+      # and skip reimporting every model and texture, which is most of the build time.
+      #
+      # PRIMA dei due passi che scrivono dentro Assets, e non dopo: la chiave e' l'hash di
+      # Assets/**, quindi un file scritto prima di qui cambierebbe la chiave a ogni build e la
+      # manderebbe a vuoto — oltre a farla divergere da quella di pr-check, che invece lavora
+      # sull'albero pulito. Il timbro e l'AppId non entrano nella cache, e non serve che lo
+      # facciano: sono due file che vengono riscritti comunque a ogni build.
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-iOS-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          restore-keys: |
+            Library-iOS-
+            Library-
+
       # Di chi e' questa build. Una build nasce da UN merge su `dev`, quindi dietro c'e' sempre una
       # pull request, e quella pull request ha un branch della forma nome/feature: e' esattamente
       # "autore e feature". Il numero della PR e' in coda al messaggio dello squash — "(#19)" — e da
@@ -109,16 +126,17 @@ jobs:
           printf '%s' "$STAMP" > Assets/Resources/BuildStamp.txt
           echo "Timbro della build: '$STAMP'"
 
-      # Unity's asset import cache. The first run is cold and slow; later runs restore it
-      # and skip reimporting every model and texture, which is most of the build time.
-      - name: Cache Unity Library
-        uses: actions/cache@v4
-        with:
-          path: Library
-          key: Library-iOS-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
-          restore-keys: |
-            Library-iOS-
-            Library-
+      # L'AppId Photon fuori dal repo. E' committato in chiaro in una repo PUBBLICA: non da' accesso
+      # al codice ne' agli account, ma chi lo legge puo' collegarsi al posto nostro e bruciare la
+      # quota di giocatori connessi — cioe' far sembrare che il gioco sia rotto.
+      #
+      # Finche' il secret non esiste, avvisa e lascia il valore committato: la pipeline continua a
+      # funzionare come prima. Quando l'AppId sara' stato ruotato e il secret configurato, il valore
+      # nel repo va svuotato e lo script diventa bloccante.
+      - name: AppId Photon
+        env:
+          PHOTON_APP_ID: ${{ secrets.PHOTON_APP_ID }}
+        run: python3 .github/scripts/photon_appid.py
 
       - name: Install Unity
         id: unity-setup

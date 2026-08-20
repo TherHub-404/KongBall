@@ -60,10 +60,11 @@ I prefab esistenti si modificano a mano nel loro YAML, sapendo cosa si sta facen
 Niente chiavi, token, `.p8`, `.p12`, blob base64, password. Neanche "solo per provare", neanche in un
 file che poi cancelli — la storia di git resta, ed è indicizzabile da chiunque nel minuto dopo il
 push. Le credenziali vivono nei secret di GitHub. Se ti serve un valore segreto dentro un file, la
-risposta è iniettarlo alla build, non scriverlo.
+risposta è iniettarlo alla build, non scriverlo: `.github/scripts/photon_appid.py` è l'esempio da
+copiare.
 
 Vale **di più** per il proprietario, non di meno: una fuga fatta da lui è pubblica esattamente come
-le altre. In questo repo è già successo, e non è ancora stato sistemato.
+le altre. In questo repo è già successo con l'AppId Photon, ed è ancora lì.
 
 ### 3. I valori serializzati nei prefab vincono sui default nel codice.
 
