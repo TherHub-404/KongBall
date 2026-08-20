@@ -101,6 +101,13 @@ jobs:
       - name: Asset sanity
         run: python3 .github/scripts/asset_sanity.py
 
+      # Gli invarianti del repo, accanto all'integrita' degli asset: nessun segreto committato,
+      # l'AppId Photon e il timbro vuoti, i flag dei NetworkObject al loro valore, nessuno shader
+      # integrato che URP butta fuori dalla build. Ogni controllo corrisponde a un guasto che qui e'
+      # gia' costato qualcosa, e ognuno e' stato provato anche NEL VERSO CHE FALLISCE.
+      - name: Invarianti del repo
+        run: python3 .github/scripts/repo_lint.py
+
       # Anche la cache: e' grossa, e ripristinarla per poi non compilare e' tempo di runner buttato.
       - name: Cache Unity Library
         if: steps.scope.outputs.unity == 'true'
