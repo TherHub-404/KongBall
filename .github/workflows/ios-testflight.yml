@@ -39,9 +39,22 @@ name: iOS TestFlight
 # `workflow_dispatch` resta per ri-buildare `dev` o `main` a mano (un hotfix, una build persa). Cio'
 # che lo rende sicuro NON e' questo commento: e' la regola sui branch dell'Environment `testflight`,
 # che GitHub applica lato server e che nega i secret a qualunque altro ref.
+#
+# Un merge che tocca SOLTANTO documentazione non produce una build. Non e' un risparmio di minuti —
+# su repo pubblica sono gratis — ma di CODA: i runner macOS in parallelo sono pochi, e con quattro
+# persone al lavoro una correzione a un `.md` manderebbe in fila la build di chi sta invece
+# aspettando davvero di provare qualcosa sul telefono. Kongball_DOCS sta fuori dal progetto Unity,
+# quindi non puo' cambiare una riga dell'app.
+#
+# Attenzione: se un push contiene sia un `.md` sia del codice, la build parte. `paths-ignore` salta
+# solo quando TUTTI i file modificati rientrano nell'elenco, che e' esattamente il comportamento
+# giusto.
 on:
   push:
     branches: [dev]
+    paths-ignore:
+      - '**/*.md'
+      - 'Kongball_DOCS/**'
   workflow_dispatch: {}
 
 # In coda, non annullate. Le build costano venti minuti e la tentazione e' annullare la precedente

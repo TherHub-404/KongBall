@@ -159,6 +159,10 @@ né annullare a metà.
 Sì: si mergia per provare. È esattamente il mestiere di `dev` ed è la ragione per cui esiste — un
 merge su `dev` fa partire la pipeline che builda e carica su TestFlight. `main` non builda niente.
 
+Con un'eccezione: **un merge che tocca soltanto documentazione non fa nessuna build**, perché non può
+cambiare una riga dell'app. Se hai mergiato solo dei `.md` e su TestFlight non arriva niente, è così
+che deve andare. Basta un file di codice nello stesso merge perché la build parta.
+
 Da cui due conseguenze da mettere in conto:
 
 - **`dev` traballa, ed è normale.** Ci arriva roba non ancora provata su un telefono, e ogni tanto
@@ -185,6 +189,10 @@ Da cui due conseguenze da mettere in conto:
 
 Il check sulla PR non è una build: compila e basta, e ci mette pochi minuti. Serve a non scoprire un
 errore di sintassi venti minuti dopo, a build fatta — cosa che qui è già successa due volte.
+
+Se la tua PR non tocca `Assets/`, `Packages/` o `ProjectSettings/`, il check **salta la compilazione**
+e diventa verde in pochi secondi: non c'è niente da compilare. Il job gira comunque, perché la spunta
+è obbligatoria e un check che non parte lascerebbe la PR bloccata per sempre.
 
 **Chi mergia.** La tua PR su `dev` la mergi tu, appena il check è verde: non c'è nessuna approvazione
 da aspettare, e non startene fermo ad aspettarne una. Quello che non fai da solo è la **promozione da
