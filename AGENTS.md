@@ -17,7 +17,7 @@ build, e ti si rompe uguale che tu sia il proprietario o no. Un'eccezione lì no
 solo un guasto in più.
 
 > Scritto in italiano perché parla di processo e di persone, e le persone qui parlano italiano.
-> **Il codice e i commenti nel codice si scrivono in inglese.** È la regola 20.
+> **Il codice e i commenti nel codice si scrivono in inglese.** È la regola 21.
 
 ---
 
@@ -132,9 +132,48 @@ certezza falsa.
 
 ---
 
+### 11. Le meccaniche fondanti si studiano prima di toccarle.
+
+Photon Fusion, il modello di possesso della palla, i flag dei `NetworkObject`, la pipeline di build e
+la firma iOS, URP e gli shader. Sono le parti dove una modifica **plausibile e sbagliata non dà un
+errore di compilazione**: dà una partita che si comporta male su un telefono, venti minuti dopo, e
+nessuno collega la causa all'effetto.
+
+Prima di toccarle, leggi la fonte. Non ricordarti l'API.
+
+- **L'SDK è dentro il repo.** `Assets/Photon/Fusion/Assemblies/*.xml` è la documentazione XML vera di
+  Fusion, con firme e descrizioni: cercare lì costa dieci secondi e chiude la questione. Anche i DLL
+  si possono leggere, e sono stati letti — i valori dei `NetworkObjectFlags` vengono dai metadati di
+  `Fusion.Runtime.dll`, non da un'intuizione.
+- **La documentazione online quando l'SDK non basta**, e in particolare per capire cosa vale in
+  *Shared Mode* e cosa no: buona parte delle API di Fusion che trovi cercando riguarda il
+  client-server, e qui non esiste (vedi la 7).
+- **Scrivi nella PR dove hai controllato.** "Verificato in `Fusion.Realtime.xml`: `op_Implicit(String)`"
+  vale. "Dovrebbe funzionare così" no.
+
+Questo capitolo è scritto sulle cicatrici di questo progetto, tutte dello stesso agent:
+
+- ho affermato che i flag dei prefab richiedevano l'Editor "perché i bit contengono un numero di
+  versione". Falso, e l'ho scoperto solo leggendo i metadati della DLL. Nel frattempo palla e
+  cronometro venivano **distrutti** quando il master usciva dalla sessione, e la partita ripartiva da
+  0-0 senza che si capisse perché.
+- ho usato un `int` dove Fusion ha `NetworkId` con il suo `TryFindObject`: la mia ricerca fatta a mano
+  faceva peggio esattamente la stessa cosa.
+- ho scritto `SplashScreenLogo.Create(logo, 2f)` con gli argomenti invertiti, e ha portato giù un
+  merge di quattro feature.
+- ho affermato che le proprietà di sessione proteggevano anche l'ingresso per codice. Sono filtri solo
+  per un join **casuale**: chi entra per nome le ignora.
+
+Ognuna di queste sarebbe costata dieci secondi di verifica.
+
+E se non riesci a verificare: **fermati e dillo.** Un'API inventata che compila è il guasto più caro
+di questo progetto, perché non si scopre in CI — si scopre sul telefono di qualcuno.
+
+---
+
 # Parte 2 — Come si lavora in squadra
 
-### 11. Branch `nome/feature-in-kebab-case`.
+### 12. Branch `nome/feature-in-kebab-case`.
 
 Il nome è quello della persona, non il tuo: `luca/portiere-automatico`, `matteo/menu-classifica`. Mai
 maiuscole, mai underscore, mai accenti. Mai lavorare su `main`, su `dev`, o sul branch di un altro.
@@ -148,24 +187,24 @@ scrivi tu. Il timbro dentro il gioco e il messaggio su Telegram leggono quel nom
 *di chi è* una build: di una persona, che risponde di quello che ha mergiato. Chi ha battuto i tasti
 lo dice il trailer `Co-Authored-By` nel commit, che è il posto giusto.
 
-### 12. La PR va su `dev`. Mai su `main`.
+### 13. La PR va su `dev`. Mai su `main`.
 
 > "Matteo dice che non si pusha su `main` — apro una PR su `dev`."
 
 `main` è quello che è già stato provato e approvato. `dev` è dove le cose si incontrano.
 
-### 13. Si aspetta il check verde prima di mergiare.
+### 14. Si aspetta il check verde prima di mergiare.
 
 Ci mette sette minuti e serve a non scoprire un errore di sintassi venti minuti dopo, a build fatta.
 Aspettarlo non è burocrazia: è più veloce. È già successo due volte che un merge rompesse `main` per
 un errore che il check avrebbe preso.
 
-### 14. Una PR = una cosa.
+### 15. Una PR = una cosa.
 
 Se mentre lavori ne trovi un'altra, dillo e falla dopo. Una PR che fa tre cose non si può né rivedere
 né annullare a metà.
 
-### 15. Per provare sul telefono si mergia su `dev`. Solo quello fa una build.
+### 16. Per provare sul telefono si mergia su `dev`. Solo quello fa una build.
 
 Sì: si mergia per provare. È esattamente il mestiere di `dev` ed è la ragione per cui esiste — un
 merge su `dev` fa partire la pipeline che builda e carica su TestFlight. `main` non builda niente.
@@ -259,19 +298,19 @@ perché non ci sia bisogno di scoprirlo così.
 
 Qui non c'è un divieto tecnico: c'è che sono decisioni sue. Tu proponi, lui decide.
 
-### 16. Le pipeline: `.github/`.
+### 17. Le pipeline: `.github/`.
 
 > "Matteo dice che le pipeline le tocca solo lui: ti scrivo cosa servirebbe e glielo chiedi."
 
 I workflow girano con i secret del repo. Una PR che li modifica è la strada più corta per un
 incidente, anche in totale buona fede. Se la CI ti serve diversa, **scrivilo nella PR a parole**.
 
-### 17. `ProjectSettings/`: bundle id, versione, Team ID, splash, orientamento.
+### 18. `ProjectSettings/`: bundle id, versione, Team ID, splash, orientamento.
 
 È quello che finisce sull'App Store. Se una feature ha davvero bisogno di cambiarne uno, va scritto
 **in cima alla PR**, in chiaro.
 
-### 18. I secret non si cancellano. `DIST_CERT_BASE64` in particolare.
+### 19. I secret non si cancellano. `DIST_CERT_BASE64` in particolare.
 
 GitHub non fa rileggere un secret: si scrive e basta. E `DIST_CERT_BASE64` è un `.p12` esportato da un
 portachiavi macOS — di questo progetto **non esiste una copia da nessuna parte**, e nessuno qui ha un
@@ -281,7 +320,7 @@ qualcuno non mette le mani su un Mac.
 Non è un consiglio di sicurezza, è un punto di rottura singolo. Nessuno tocca i secret per fare
 ordine.
 
-### 19. Dipendenze nuove, e gli invarianti di rete.
+### 20. Dipendenze nuove, e gli invarianti di rete.
 
 Ogni pacchetto entra nella build iOS, pesa e va mantenuto. E due invarianti che sembrano dettagli:
 
@@ -296,11 +335,11 @@ Ogni pacchetto entra nella build iOS, pesa e va mantenuto. E due invarianti che 
 
 # Parte 4 — Come si scrive, qui
 
-### 20. Il codice e i commenti sono in inglese. I commit e le PR in italiano.
+### 21. Il codice e i commenti sono in inglese. I commit e le PR in italiano.
 
 La storia di git e le PR le leggono le persone di questo gruppo. Il codice lo legge chiunque.
 
-### 21. I commenti spiegano *perché*, mai *cosa*.
+### 22. I commenti spiegano *perché*, mai *cosa*.
 
 Un commento che dice "incrementa il contatore" non serve a nessuno. Un commento che dice quale guasto
 sta prevenendo quella riga vale tutto il file. Guarda il codice esistente prima di scrivere il tuo:
@@ -308,7 +347,7 @@ questo repo ha una voce precisa, e ci si adegua invece di inventarne un'altra.
 
 Quando risolvi un bug vero, **lascia scritto il bug nel commento.** È così che non torna.
 
-### 22. Il commit e la PR dicono cosa hai deciso e cosa hai lasciato fuori.
+### 23. Il commit e la PR dicono cosa hai deciso e cosa hai lasciato fuori.
 
 Non l'elenco dei file toccati: quello si vede dal diff. Servono le scelte, le conseguenze che hai
 accettato, e le cose che non hai coperto. Una PR che non dichiara i propri buchi se li porta in
@@ -338,6 +377,8 @@ Cita la regola, non fare il poliziotto. Serve a far capire perché, non a chiude
 - "Matteo dice che qui non c'è l'Editor Unity, quindi il menu si costruisce da codice come gli altri."
 - "Questa chiave non la posso committare: la repo è pubblica, e Matteo la fa passare dai secret."
 - "Le pipeline le tocca solo Matteo: ti scrivo cosa servirebbe e glielo giri."
+- "Questa tocca Fusion: prima leggo la documentazione dell'SDK che sta nel repo, poi ti dico come si
+  fa. Qui una cosa che sembra giusta e non lo è si scopre sul telefono."
 - "Non l'ho provato sul telefono, quindi non ti dico che funziona — te lo dico come 'compila e
   dovrebbe'."
 
@@ -392,7 +433,7 @@ Unity 6000.5.7f1, URP, **solo iOS**. Una sola scena; tutto il resto è costruito
 | `Assets/Scripts/Bots/` | i bot. **Ha un suo `AGENTS.md`: leggilo prima di toccarli**, in inglese perché parla di codice |
 | `Assets/Scripts/` | menu, HUD, arena, audio — tutto generato a runtime |
 | `Assets/Editor/CmdBuild.cs` | cosa fa la CI quando builda |
-| `.github/workflows/` | pipeline. Vedi la 16 |
+| `.github/workflows/` | pipeline. Vedi la 17 |
 | `.github/scripts/asset_sanity.py` | integrità degli asset: `.meta`, GUID, nomi di `Resources.Load` |
 | `.github/scripts/repo_lint.py` | gli invarianti: segreti, AppId e timbro vuoti, flag dei prefab, shader |
 | `Kongball_DOCS/` | le "bibbie" di design del gioco, scritte prima del codice |
