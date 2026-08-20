@@ -142,6 +142,12 @@ maiuscole, mai underscore, mai accenti. Mai lavorare su `main`, su `dev`, o sul 
 Non è un'esortazione: il primo step della CI legge il nome del branch e **rifiuta la PR** se non
 torna. Meglio scegliere bene subito che rinominare dopo.
 
+E se stai leggendo questo perché sei un agent: **il nome è quello della persona per cui lavori, non
+il tuo.** Se lavori per matteo il branch è `matteo/...`, non `claude/...` — anche se i commit li
+scrivi tu. Il timbro dentro il gioco e il messaggio su Telegram leggono quel nome, e servono a dire
+*di chi è* una build: di una persona, che risponde di quello che ha mergiato. Chi ha battuto i tasti
+lo dice il trailer `Co-Authored-By` nel commit, che è il posto giusto.
+
 ### 12. La PR va su `dev`. Mai su `main`.
 
 > "Matteo dice che non si pusha su `main` — apro una PR su `dev`."
@@ -177,6 +183,28 @@ Da cui due conseguenze da mettere in conto:
   vicenda proprio per questo: un merge, una build, così si capisce di chi è quella che stai provando.
 
 ---
+
+## I due controlli che devi far passare
+
+Girano in pochi secondi, senza Unity, e sono i primi due step del check.
+
+`asset_sanity.py` guarda l'**integrità degli asset**: `.meta` mancanti, GUID duplicati, nomi passati
+a `Resources.Load` senza un asset dietro.
+
+`repo_lint.py` guarda gli **invarianti**, e sono cinque:
+
+- **nessun segreto committato** — chiavi private, token GitHub, token di bot Telegram
+- **`AppIdFusion` e `BuildStamp.txt` vuoti** — li riempie la pipeline; se li trovi pieni, qualcuno
+  ha rimesso dentro un valore per far funzionare qualcosa in locale
+- **i flag dei tre prefab di rete** al loro numero esatto — sono bit compattati, non booleani, e se
+  cambiano la partita si rompe in un modo che non sembra collegato alla causa
+- **nessuno shader integrato per nome** (`Standard`, `GUI/Text`, `Legacy Shaders/…`) — URP non li
+  mette nella build: nell'editor si vedono, sul telefono sono magenta
+- **nessun `TextMesh`** — stesso motivo
+
+Se uno diventa rosso, il messaggio dice *cosa si rompe*, non solo che una regola è stata violata. E
+ognuno è stato provato anche nel verso che fallisce: un controllo che nessuno ha visto fallire non è
+un controllo.
 
 ## Come si arriva sul telefono
 
@@ -283,6 +311,7 @@ produzione.
 ## "Fatto" vuol dire
 
 - [ ] `python3 .github/scripts/asset_sanity.py` passa
+- [ ] `python3 .github/scripts/repo_lint.py` passa
 - [ ] ogni file nuovo in `Assets/` ha il suo `.meta` con GUID nuovo
 - [ ] il branch si chiama `nome/feature-in-kebab-case`
 - [ ] la PR è su `dev`
@@ -356,5 +385,6 @@ Unity 6000.5.7f1, URP, **solo iOS**. Una sola scena; tutto il resto è costruito
 | `Assets/Scripts/` | menu, HUD, arena, audio — tutto generato a runtime |
 | `Assets/Editor/CmdBuild.cs` | cosa fa la CI quando builda |
 | `.github/workflows/` | pipeline. Vedi la 16 |
-| `.github/scripts/asset_sanity.py` | i controlli che devi far passare |
+| `.github/scripts/asset_sanity.py` | integrità degli asset: `.meta`, GUID, nomi di `Resources.Load` |
+| `.github/scripts/repo_lint.py` | gli invarianti: segreti, AppId e timbro vuoti, flag dei prefab, shader |
 | `Kongball_DOCS/` | le "bibbie" di design del gioco, scritte prima del codice |
