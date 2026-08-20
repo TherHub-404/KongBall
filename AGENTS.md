@@ -142,6 +142,12 @@ maiuscole, mai underscore, mai accenti. Mai lavorare su `main`, su `dev`, o sul 
 Non è un'esortazione: il primo step della CI legge il nome del branch e **rifiuta la PR** se non
 torna. Meglio scegliere bene subito che rinominare dopo.
 
+E se stai leggendo questo perché sei un agent: **il nome è quello della persona per cui lavori, non
+il tuo.** Se lavori per matteo il branch è `matteo/...`, non `claude/...` — anche se i commit li
+scrivi tu. Il timbro dentro il gioco e il messaggio su Telegram leggono quel nome, e servono a dire
+*di chi è* una build: di una persona, che risponde di quello che ha mergiato. Chi ha battuto i tasti
+lo dice il trailer `Co-Authored-By` nel commit, che è il posto giusto.
+
 ### 12. La PR va su `dev`. Mai su `main`.
 
 > "Matteo dice che non si pusha su `main` — apro una PR su `dev`."
