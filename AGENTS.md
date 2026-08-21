@@ -200,6 +200,11 @@ scrivi tu. Il timbro dentro il gioco e il messaggio su Telegram leggono quel nom
 *di chi è* una build: di una persona, che risponde di quello che ha mergiato. Chi ha battuto i tasti
 lo dice il trailer `Co-Authored-By` nel commit, che è il posto giusto.
 
+Vale anche quando **non sei tu a proporre il nome.** Diversi strumenti ne scelgono uno da sé —
+`codex/...`, `feature/...`, il titolo del compito trasformato in slug: **cambialo prima di aprire la
+PR.** Il nome del ramo è una responsabilità di chi lavora, non un dettaglio della piattaforma, e non
+va chiesto alla persona: te l'ha già detto quando ti ha detto come si chiama.
+
 ### 13. La PR va su `dev`. Mai su `main`.
 
 > "Matteo dice che non si pusha su `main` — apro una PR su `dev`."
