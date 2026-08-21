@@ -196,7 +196,7 @@ torna. Meglio scegliere bene subito che rinominare dopo.
 
 E se stai leggendo questo perché sei un agent: **il nome è quello della persona per cui lavori, non
 il tuo.** Se lavori per matteo il branch è `matteo/...`, non `claude/...` — anche se i commit li
-scrivi tu. Il timbro dentro il gioco e il messaggio su Telegram leggono quel nome, e servono a dire
+scrivi tu. Il timbro dentro il gioco e il messaggio nel gruppo leggono quel nome, e servono a dire
 *di chi è* una build: di una persona, che risponde di quello che ha mergiato. Chi ha battuto i tasti
 lo dice il trailer `Co-Authored-By` nel commit, che è il posto giusto.
 
@@ -250,7 +250,7 @@ a `Resources.Load` senza un asset dietro.
 
 `repo_lint.py` guarda gli **invarianti**, e sono cinque:
 
-- **nessun segreto committato** — chiavi private, token GitHub, token di bot Telegram
+- **nessun segreto committato** — chiavi private, token GitHub, token di bot Telegram, webhook Discord
 - **`AppIdFusion` e `BuildStamp.txt` vuoti** — li riempie la pipeline; se li trovi pieni, qualcuno
   ha rimesso dentro un valore per far funzionare qualcosa in locale
 - **i flag dei tre prefab di rete** al loro numero esatto — sono bit compattati, non booleani, e se
@@ -302,7 +302,7 @@ voluto, e la soluzione è che uno dei due installi la build dell'altro. Vale sia
 sia per le stanze private, dove l'identità è cucita nel nome della sessione.
 
 **Dopo il merge.** La build parte da sola, ci mette una ventina di minuti, e poi TestFlight ci mette
-il suo a processarla. Il gruppo Telegram riceve un messaggio in entrambi i casi: quando la build è
+il suo a processarla. Il gruppo — Telegram, Discord, o entrambi — riceve un messaggio in entrambi i casi: quando la build è
 pronta, con l'elenco di cosa è cambiato dall'ultima, e quando è **rotta**, col tuo nome sopra.
 
 Se fallisce, **il guasto è tuo**: apri il log della Action, capisci cosa è successo, correggi sul tuo
@@ -420,7 +420,7 @@ tocca la pipeline / la versione dell'app: confermi?"*, e si va avanti.
 **La parte 2 resta, con una via d'uscita.** Può pushare su `main` per un hotfix, e non aspetta
 l'approvazione di nessuno perché non c'è nessun altro che approva. Ma il branch, la PR e il check
 verde convengono anche a lui, e non per disciplina: sette minuti di check contro venti di build
-sprecata, e la PR è ciò da cui il changelog su Telegram capirà cosa è cambiato. Se salta il flusso,
+sprecata, e la PR è ciò da cui il changelog nel gruppo capirà cosa è cambiato. Se salta il flusso,
 è una scelta, non una svista.
 
 E la cosa che conta davvero: **queste eccezioni sono scritte qui apposta.** Se gli amici vedono
