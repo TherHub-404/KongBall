@@ -352,6 +352,16 @@ la texture. Per rimpicciolirle senza Editor c'è `.github/scripts/glb_textures.p
 `.glb` lasciando la geometria intatta byte per byte. Un fondale sta a 512, una cosa che si vede da
 vicino a 1024; 2048 va giustificato.
 
+L'altra metà sono i **triangoli**. Gli asset di questo gioco sono arrivati con quasi due milioni di
+triangoli in tre modelli: una porta da 730.000, il campo da 857.000, la scimmia da 341.000. Su un
+telefono quella non è solo build che pesa, è calore e frame persi. Si riducono con
+`npx @gltf-transform/cli simplify in.glb out.glb --ratio 0.1 --error 0.005`, che è
+meshoptimizer e non tocca né le texture né i nomi dei nodi — e i nomi contano, perché se cambiano i
+prefab perdono il riferimento alla mesh. Al 10% i tre modelli non si distinguono dagli originali;
+sotto il 5% la scimmia comincia a fare i bozzi. **Controlla il risultato con un occhio, non solo col
+numero**: si può renderizzare un `.glb` headless con three.js e Chromium, ed è così che quel 10% è
+stato scelto.
+
 E due invarianti che sembrano dettagli:
 
 - `NetPlayer.prefab` è `DestroyWhenStateAuthorityLeaves` — il tuo avatar deve sparire quando esci.
