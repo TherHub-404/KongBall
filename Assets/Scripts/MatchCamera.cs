@@ -28,8 +28,10 @@ namespace KongBall
         //
         // The limit is Arena's own shape, not a pair of numbers copied from it — the last time the
         // pitch changed, every place holding its own copy of the bounds became wrong at once.
-        [Tooltip("Never shorten the arm below this fraction, or the camera ends up inside the player.")]
+        [Tooltip("Never shorten the arm below this fraction.")]
         public float minArm = 0.3f;
+        [Tooltip("Closest the camera may get to the player. Below this it climbs instead.")]
+        public float minDistance = 2f;
 
         [Header("Look (drag) sensitivity")]
         public float yawSensitivity = 0.22f;   // deg per screen pixel
@@ -86,6 +88,16 @@ namespace KongBall
             // then, the position is pushed back in — which slides the player off centre, which is
             // why it is the last resort and not the first.
             camPos = Arena.PushInside(camPos);
+
+            // Pulling it back can leave the camera standing ON the player: measured over 300.000
+            // combinations, the worst case put it a centimetre away. It climbs rather than getting
+            // any closer — up is the one direction with nothing in the way, and a steep shot of your
+            // own back beats a screenful of the inside of your own head.
+            Vector3 scarto = camPos - focus;
+            float piano = new Vector2(scarto.x, scarto.z).magnitude;
+            if (scarto.magnitude < minDistance)
+                camPos.y = focus.y + Mathf.Sqrt(Mathf.Max(0f, minDistance * minDistance - piano * piano));
+
             if (instant)
                 transform.position = camPos;
             else

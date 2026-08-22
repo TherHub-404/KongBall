@@ -77,42 +77,59 @@ namespace KongBall
             var pts = Arena.Outline();
             int n = 0;
             for (int i = 0; i < pts.Length; i++)
-            {
-                Vector3 a = pts[i], b = pts[(i + 1) % pts.Length];
+                n += ClipMouth(root, n, pts[i], pts[(i + 1) % pts.Length]);
 
-                // The two straight runs behind the goals are the goal mouths: the wall has to open
-                // there or the ball bounces off thin air a metre short of the net. Everything else
-                // is built whole.
-                bool fondo = Mathf.Abs(a.x) > Arena.HalfX - 0.01f && Mathf.Abs(b.x) > Arena.HalfX - 0.01f;
-                if (fondo)
-                {
-                    float lato = Mathf.Sign(a.x);
-                    float bordo = Arena.HalfZ - Arena.CornerRadius;        // where the arc takes over
-                    if (bordo > Arena.GoalMouthHalfZ)
-                    {
-                        n += Segment(root, n, new Vector3(lato * Arena.HalfX, 0f, Arena.GoalMouthHalfZ),
-                                              new Vector3(lato * Arena.HalfX, 0f, bordo), 0f, Arena.WallHeight);
-                        n += Segment(root, n, new Vector3(lato * Arena.HalfX, 0f, -bordo),
-                                              new Vector3(lato * Arena.HalfX, 0f, -Arena.GoalMouthHalfZ), 0f, Arena.WallHeight);
-                    }
-                    // Above the crossbar the mouth closes again. A shot that goes over is a miss,
-                    // and a miss should come back into play — not sail into the stands and get
-                    // teleported to the centre spot by the out-of-bounds net.
-                    n += Segment(root, n, new Vector3(lato * Arena.HalfX, 0f, -Arena.GoalMouthHalfZ),
-                                          new Vector3(lato * Arena.HalfX, 0f, Arena.GoalMouthHalfZ),
-                                          Arena.GoalHeight, Arena.WallHeight);
-                    continue;
-                }
-                n += Segment(root, n, a, b, 0f, Arena.WallHeight);
-            }
+            // Above the crossbar the mouth closes again. A shot that goes over is a miss, and a miss
+            // should come back into play — not sail into the stands and get teleported to the centre
+            // spot by the out-of-bounds net.
+            for (int s = -1; s <= 1; s += 2)
+                n += Segment(root, n, new Vector3(s * Arena.HalfX, 0f, -Arena.GoalMouthHalfZ),
+                                      new Vector3(s * Arena.HalfX, 0f, Arena.GoalMouthHalfZ),
+                                      Arena.GoalHeight, Arena.WallHeight);
+
             Debug.Log("[Arena] " + n + " wall segments built from the touchline, goal mouths open");
         }
 
-        static int Segment(Transform root, int n, Vector3 a, Vector3 b, float da, float a2)
+        // Builds a stretch of wall, minus whatever part of it falls inside a goal mouth. The mouth is
+        // the strip behind each goal line where |z| is small: there the wall has to be missing from
+        // the ground up to the crossbar, or the ball bounces off thin air a metre short of the net.
+        //
+        // The whole perimeter goes through here rather than the two end pieces being special-cased,
+        // because "which segment is behind the goal" depends on the table and would be one more thing
+        // to keep in step with it.
+        static int ClipMouth(Transform root, int n, Vector3 a, Vector3 b)
+        {
+            // Where the segment crosses the two edges of the mouth, plus its own ends.
+            var t = new float[4];
+            int m = 0;
+            t[m++] = 0f; t[m++] = 1f;
+            float dz = b.z - a.z;
+            if (Mathf.Abs(dz) > 1e-5f)
+            {
+                float ta = (Arena.GoalMouthHalfZ - a.z) / dz;
+                float tb = (-Arena.GoalMouthHalfZ - a.z) / dz;
+                if (ta > 0f && ta < 1f) t[m++] = ta;
+                if (tb > 0f && tb < 1f) t[m++] = tb;
+            }
+            System.Array.Sort(t, 0, m);
+
+            int fatti = 0;
+            for (int k = 0; k + 1 < m; k++)
+            {
+                Vector3 p0 = Vector3.Lerp(a, b, t[k]), p1 = Vector3.Lerp(a, b, t[k + 1]);
+                Vector3 mezzo = (p0 + p1) * 0.5f;
+                bool bocca = Mathf.Abs(mezzo.x) > Arena.GoalLineX &&
+                             Mathf.Abs(mezzo.z) < Arena.GoalMouthHalfZ;
+                if (!bocca) fatti += Segment(root, n + fatti, p0, p1, 0f, Arena.WallHeight);
+            }
+            return fatti;
+        }
+
+        static int Segment(Transform root, int n, Vector3 a, Vector3 b, float da, float fino)
         {
             Vector3 along = b - a;
             float len = along.magnitude;
-            float alt = a2 - da;
+            float alt = fino - da;
             if (len < 1e-3f || alt < 1e-3f) return 0;
 
             var go = new GameObject("Wall_" + n);

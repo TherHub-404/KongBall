@@ -2,21 +2,28 @@ using UnityEngine;
 
 namespace KongBall
 {
-    // The shape of the playing area, in one place, because three different things have to agree on
-    // it exactly: the walls the ball bounces off, the paint the player sees, and the out-of-bounds
-    // check that teleports the ball back to the centre. They used to be three separate sets of
-    // numbers — a rectangle in the scene, a rectangle in ArenaDressing, and a hardcoded
-    // "|z| > 16" in NetBall — and the moment the pitch was widened the ball started resetting
-    // itself while still in play.
+    // The shape of the playing area, in one place, because four different things have to agree on
+    // it exactly: the wall the ball bounces off, the paint the player sees, the out-of-bounds check
+    // that teleports the ball back to the centre, and the camera. They used to be four separate sets
+    // of numbers — boxes in the scene, a rectangle in ArenaDressing, a hardcoded "|z| > 16" in
+    // NetBall and a pair of half-extents in MatchCamera — and the moment the pitch was widened the
+    // ball started resetting itself while it was still in play.
     //
-    // The numbers are MEASURED off Arena.glb, not chosen: the model's inner boundary was sampled
-    // every degree below 3 m of height, and this is the largest rounded rectangle that fits inside
-    // it with 0.8 m of clearance (half the wall thickness plus air). That is why the corners are so
-    // round — the arena's interior really is that shape. Anything more square leaves the corners
-    // empty; anything bigger puts the wall inside the stands.
+    // The shape is MEASURED off Arena.glb, not chosen. The model's inner boundary was sampled every
+    // degree below 3 m of height, and the table below is that boundary minus 0.8 m of clearance for
+    // the wall. It is not a rectangle because the arena is not a rectangle: the first version of
+    // this file fitted the largest rounded rectangle that fits inside, and left up to EIGHT METRES
+    // of visible ground outside the corners that the player could see and could not walk on.
     //
-    // If Arena.glb is ever replaced, these numbers are wrong and have to be measured again. The
-    // measuring is scripted: see the pull request that introduced this file.
+    // Three things are done to the raw measurement, all of them cutting inward, never outward:
+    //  - a running minimum over +-3 degrees, so a single rock does not make a spike;
+    //  - mirroring on both axes, keeping the smallest of the four — the arena is genuinely lopsided,
+    //    and a pitch with one wing wider than the other is not a pitch;
+    //  - a cap on how fast the radius may change, so the wall cannot turn a corner sharp enough to
+    //    make a bounce look like a bug.
+    //
+    // If Arena.glb is ever replaced this table is wrong and has to be measured again. The measuring
+    // is scripted: see the pull request that introduced it.
     public static class Arena
     {
         // --- The model, and where it sits ---------------------------------------------------------
@@ -25,27 +32,35 @@ namespace KongBall
         public const float ModelScale = 41f;
         // Lifts the model's GROUND PLANE to y = 0. Not its lowest vertex, which sits 0.4 m lower.
         public const float ModelY = 7.34f;
-        // The interior is not centred on the model's origin: a stand comes 8 m further in on one
-        // side than the other. Shifting the model is what lets the pitch stay centred on the origin,
+        // The interior is not centred on the model's origin: one stand comes several metres further
+        // in than the others. Shifting the model is what lets the pitch stay centred on the origin,
         // which everything else in the game assumes.
-        public const float ModelX = 1f;
-        public const float ModelZ = -2f;
+        public const float ModelX = 0f;
+        public const float ModelZ = -2.5f;
 
-        // --- The playing area ---------------------------------------------------------------------
-        public const float HalfX = 25.1f;
-        public const float HalfZ = 20.74f;
-        public const float CornerRadius = 16.18f;
+        // --- The touchline ------------------------------------------------------------------------
+        // One quadrant, from +x (index 0) round to +z (last index), every 5 degrees. The other three
+        // quadrants are this one mirrored, which is what makes the two halves of the pitch identical
+        // by construction rather than by luck.
+        static readonly float[] Quadrant =
+        {
+            26.48f, 26.56f, 26.83f, 26.13f, 26.13f, 26.13f, 27.16f, 26.72f, 24.97f, 24.40f,
+            24.10f, 23.61f, 23.61f, 23.30f, 22.95f, 22.65f, 22.19f, 22.11f, 22.11f,
+        };
+
+        public static readonly float HalfX = Quadrant[0];                    // to the goal line
+        public static readonly float HalfZ = Quadrant[Quadrant.Length - 1];  // to the touchline
 
         public const float WallHeight = 10f;      // tall enough that a lobbed ball cannot leave
         public const float WallThickness = 0.6f;
 
         // --- The goals ------------------------------------------------------------------------------
-        // Here rather than on NetBall because the wall has to leave a hole exactly where the goal
-        // is, and the ball has to be judged in exactly that hole. Two copies of "where the goal is"
-        // is one copy too many.
-        public const float GoalLineX = 23.3f;     // x the ball must cross to score
-        public const float GoalHalfZ = 3.4f;      // goal mouth half-width
-        public const float GoalHeight = 3f;       // above this it is over the bar
+        // Here rather than on NetBall because the wall has to leave a hole exactly where the goal is,
+        // and the ball has to be judged in exactly that hole. Two copies of "where the goal is" is
+        // one copy too many.
+        public static readonly float GoalLineX = HalfX - 1.8f;   // x the ball must cross to score
+        public const float GoalHalfZ = 3.4f;                     // goal mouth half-width
+        public const float GoalHeight = 3f;                      // above this it is over the bar
 
         // Where the wall stops so the ball can reach the goal. Matches the OUTER face of the goal
         // pocket's side walls, not the mouth between them: overlapping the pocket by a few
@@ -53,17 +68,24 @@ namespace KongBall
         // through once every hundred matches, which is the worst kind of bug to be told about.
         public const float GoalMouthHalfZ = 3.5f;
 
-        // Signed distance to the touchline: negative inside, positive outside, in metres. Exact for
-        // a rounded rectangle, which is what makes it usable for all three jobs — the wall is built
-        // where this is zero, the paint is drawn where it is near zero, and "in play" is where it is
-        // negative.
+        // Distance from the centre to the touchline in the direction of (x, z). Reads the quadrant
+        // table with the direction folded into the first quadrant, so the mirroring costs nothing.
+        public static float Radius(float x, float z)
+        {
+            float ax = Mathf.Abs(x), az = Mathf.Abs(z);
+            if (ax < 1e-6f && az < 1e-6f) return Quadrant[0];
+            int last = Quadrant.Length - 1;
+            float t = Mathf.Atan2(az, ax) / (Mathf.PI * 0.5f) * last;
+            int i = Mathf.Clamp((int)t, 0, last - 1);
+            return Mathf.Lerp(Quadrant[i], Quadrant[i + 1], t - i);
+        }
+
+        // Negative inside the pitch, positive outside, in metres along the radius. Measured radially
+        // rather than perpendicular to the touchline: the boundary never turns fast enough for the
+        // difference to matter, and this way one table answers every question asked of it.
         public static float Distance(float x, float z)
         {
-            float qx = Mathf.Abs(x) - (HalfX - CornerRadius);
-            float qz = Mathf.Abs(z) - (HalfZ - CornerRadius);
-            float outside = Mathf.Sqrt(Mathf.Max(qx, 0f) * Mathf.Max(qx, 0f) +
-                                       Mathf.Max(qz, 0f) * Mathf.Max(qz, 0f));
-            return outside + Mathf.Min(Mathf.Max(qx, qz), 0f) - CornerRadius;
+            return Mathf.Sqrt(x * x + z * z) - Radius(x, z);
         }
 
         public static bool Contains(Vector3 p, float slack = 0f)
@@ -71,49 +93,33 @@ namespace KongBall
             return Distance(p.x, p.z) < slack;
         }
 
-        // Slides a point back onto the pitch along the shortest way in, leaving it inset metres
-        // inside the touchline. A no-op for a point already inside, which is the common case.
-        //
-        // One gradient step is enough: for a rounded rectangle the gradient IS the direction of the
-        // nearest boundary point everywhere except exactly on the centre lines, where the distance
-        // is zero anyway.
+        // Pulls a point back onto the pitch along its own radius, leaving it inset metres inside the
+        // touchline. A no-op for a point already inside, which is the common case.
         public static Vector3 PushInside(Vector3 p, float inset = 0f)
         {
             float d = Distance(p.x, p.z);
             if (d <= -inset) return p;
-            const float e = 0.05f;
-            float gx = Distance(p.x + e, p.z) - Distance(p.x - e, p.z);
-            float gz = Distance(p.x, p.z + e) - Distance(p.x, p.z - e);
-            float len = Mathf.Sqrt(gx * gx + gz * gz);
-            if (len < 1e-5f) return p;
-            float k = (d + inset) / len;
-            return new Vector3(p.x - gx * k, p.y, p.z - gz * k);
+            float len = Mathf.Sqrt(p.x * p.x + p.z * p.z);
+            if (len < 1e-4f) return p;
+            float k = (Radius(p.x, p.z) - inset) / len;
+            return new Vector3(p.x * k, p.y, p.z * k);
         }
 
-        // The touchline as a closed polygon, walked in order: the four straight runs joined by four
-        // quarter circles. arcSteps is per corner.
+        // The touchline as a closed polygon, one point per table entry all the way round.
         //
         // Returned as points rather than as boxes so the caller decides what to build from them —
         // ArenaDressing turns consecutive pairs into wall segments, and the same list would serve a
         // line renderer or a debug draw without knowing anything about physics.
-        public static Vector3[] Outline(int arcSteps = 12)
+        public static Vector3[] Outline()
         {
-            float sx = HalfX - CornerRadius;    // where the straight runs end
-            float sz = HalfZ - CornerRadius;
-            var pts = new Vector3[4 * (arcSteps + 1)];
-            int n = 0;
-            // Four quadrants, each: the corner arc, ending on the straight run that follows it.
-            for (int q = 0; q < 4; q++)
+            int n = (Quadrant.Length - 1) * 4;
+            var pts = new Vector3[n];
+            for (int i = 0; i < n; i++)
             {
-                float cx = (q == 0 || q == 3) ? sx : -sx;
-                float cz = (q == 0 || q == 1) ? sz : -sz;
-                float from = q * 90f;           // 0 deg = +x, counter-clockwise
-                for (int i = 0; i <= arcSteps; i++)
-                {
-                    float a = (from + 90f * i / arcSteps) * Mathf.Deg2Rad;
-                    pts[n++] = new Vector3(cx + Mathf.Cos(a) * CornerRadius, 0f,
-                                           cz + Mathf.Sin(a) * CornerRadius);
-                }
+                float a = i / (float)n * Mathf.PI * 2f;
+                float ux = Mathf.Cos(a), uz = Mathf.Sin(a);
+                float r = Radius(ux, uz);
+                pts[i] = new Vector3(ux * r, 0f, uz * r);
             }
             return pts;
         }
