@@ -290,7 +290,7 @@ namespace KongBall
 
             foreach (var pacco in report.packedAssets)
             {
-                foreach (var voce in pacco.GetContents())
+                foreach (var voce in pacco.contents)
                 {
                     tutti.Add(voce);
                     string tipo = voce.type != null ? voce.type.Name : "?";
