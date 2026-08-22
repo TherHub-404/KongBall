@@ -338,9 +338,21 @@ qualcuno non mette le mani su un Mac.
 Non è un consiglio di sicurezza, è un punto di rottura singolo. Nessuno tocca i secret per fare
 ordine.
 
-### 20. Dipendenze nuove, e gli invarianti di rete.
+### 20. Dipendenze nuove, peso degli asset, e gli invarianti di rete.
 
-Ogni pacchetto entra nella build iOS, pesa e va mantenuto. E due invarianti che sembrano dettagli:
+Ogni pacchetto entra nella build iOS, pesa e va mantenuto. Due pacchetti di AI mai usati da una riga
+di codice si portavano dietro dodici mega di compute shader, e stavano in una cartella `Resources`,
+cioè finivano nella build a prescindere.
+
+Sugli asset la trappola è più subdola: **glTFast importa le immagini dentro un `.glb` come texture
+non compresse**. Una 2048×2048 sono 21 MB di build con le mipmap, e non importa che il JPEG dentro il
+file pesi 1 MB. Dieci modelli così facevano 212 MB, il 73% degli asset del gioco, su un gioco che è
+una palla e due scimmie. Il numero da guardare non è quanto pesa il file in repo, è quanti pixel ha
+la texture. Per rimpicciolirle senza Editor c'è `.github/scripts/glb_textures.py`, che riscrive il
+`.glb` lasciando la geometria intatta byte per byte. Un fondale sta a 512, una cosa che si vede da
+vicino a 1024; 2048 va giustificato.
+
+E due invarianti che sembrano dettagli:
 
 - `NetPlayer.prefab` è `DestroyWhenStateAuthorityLeaves` — il tuo avatar deve sparire quando esci.
   È la ragione per cui i bot oggi vivono solo in allenamento.
@@ -455,4 +467,5 @@ Unity 6000.5.7f1, URP, **solo iOS**. Una sola scena; tutto il resto è costruito
 | `.github/workflows/` | pipeline. Vedi la 17 |
 | `.github/scripts/asset_sanity.py` | integrità degli asset: `.meta`, GUID, nomi di `Resources.Load` |
 | `.github/scripts/repo_lint.py` | gli invarianti: segreti, AppId e timbro vuoti, flag dei prefab, shader |
+| `.github/scripts/glb_textures.py` | rimpicciolisce le texture dentro un `.glb` senza aprire Unity. Vedi la 20 |
 | `Kongball_DOCS/` | le "bibbie" di design del gioco, scritte prima del codice |
