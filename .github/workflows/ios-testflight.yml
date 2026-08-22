@@ -169,13 +169,39 @@ jobs:
           # unity-setup may hand back the .app bundle rather than the executable inside it.
           if [ -d "$UNITY" ]; then UNITY="$UNITY/Contents/MacOS/Unity"; fi
 
+          # Il log resta su stdout — serve a vedere la build mentre gira — e in copia su un file, da
+          # cui il passo dopo estrae il peso. `pipefail` e' attivo qui sopra, quindi un fallimento di
+          # Unity passa attraverso il tee e non viene mangiato.
           "$UNITY" -quit -batchmode -nographics \
             -projectPath "$GITHUB_WORKSPACE" \
             -executeMethod KongBall.CmdBuild.IOSConfigured \
-            -logFile -
+            -logFile - | tee "$RUNNER_TEMP/unity.log"
 
           test -d "$GITHUB_WORKSPACE/Builds/iOS/Unity-iPhone.xcodeproj" \
             || { echo "::error::Unity did not generate the Xcode project"; exit 1; }
+
+      # Quanto pesa l'app e dove sta il peso, dal BuildReport che Unity restituisce a BuildPlayer.
+      #
+      # Finisce nel RIEPILOGO della run e non solo nel log: quel log e' ventimila righe, e chi ha
+      # bisogno di questo numero lavora dal telefono. `always()` perche' se la build fallisce dopo
+      # aver generato il progetto, sapere cosa pesava e' comunque un'informazione.
+      - name: Peso della build
+        if: always()
+        run: |
+          set -uo pipefail
+          RIGHE="$(grep -F 'CMDBUILD size:' "$RUNNER_TEMP/unity.log" 2>/dev/null | sed 's/.*CMDBUILD size: //')" || true
+          if [ -z "$RIGHE" ]; then
+            echo "::warning::Nessun report di dimensione: BuildPlayer non e' arrivato in fondo, oppure il prefisso CMDBUILD size: e' cambiato."
+            exit 0
+          fi
+          echo "$RIGHE"
+          {
+            echo "## Peso della build"
+            echo
+            echo '```'
+            echo "$RIGHE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # A hosted runner has an empty keychain, so the signing identity has to be imported.
       # This is the step the self-hosted Mac never needed: the cert lived in its login keychain.
