@@ -298,7 +298,7 @@ namespace KongBall.Bots
             _hold = 0f;
             if (_mode != Mode.Attack) return;
             _shootFrom = Random.Range(shootNearest, shootFarthest);
-            float mouth = ball.goalHalfZ * 0.6f;
+            float mouth = Arena.GoalHalfZ * 0.6f;
             _aimZ = Random.Range(-mouth, mouth);
             _fluff = Random.value < missChance;
         }
@@ -325,7 +325,7 @@ namespace KongBall.Bots
         // the one that decides goals. Blue attacks +x, as everywhere else.
         static float GoalX(NetPlayer me, NetBall ball)
         {
-            return me.NetTeam == (int)Team.Blue ? ball.goalLineX : -ball.goalLineX;
+            return me.NetTeam == (int)Team.Blue ? Arena.GoalLineX : -Arena.GoalLineX;
         }
 
         static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }

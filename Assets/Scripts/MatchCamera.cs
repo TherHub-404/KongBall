@@ -14,22 +14,20 @@ namespace KongBall
         [Tooltip("How smoothly the orbit angle eases toward the dragged target (higher = snappier).")]
         public float rotationLerp = 10f;
 
-        // The orbit arm is 10 m and the player can stand against a wall, so the camera's ideal
-        // position lands up to 31,8 m out in x and 27,2 m out in z — well outside the arena, whose
-        // interior is clear only to about 24 x 19 m below the roofline. Left alone the camera ends
-        // up inside the stands, looking at the back of them.
+        // The orbit arm is 10 m and the player can stand against the wall, so the camera's ideal
+        // position lands well outside the pitch — and outside the pitch is the stands. Left alone
+        // the camera ends up inside them, looking at their backs.
         //
         // This was already happening before the arena became one model: the camera went through the
         // palms and the stand rows that used to be planted around the pitch. Solid geometry only
         // makes it impossible to miss.
         //
-        // The arm is shortened instead of the position being clamped: pulling the camera in along
-        // its own direction keeps the player where the drag put him on screen. Clamping the position
-        // would slide him off centre, and the whole point of this rig is that the drag means one
-        // thing and only one thing.
-        [Header("Stay inside the arena")]
-        public float insideHalfX = 23.8f;
-        public float insideHalfZ = 18.8f;
+        // The arm is shortened rather than the position clamped: pulling the camera in along its own
+        // direction keeps the player where the drag put him on screen. Clamping the position would
+        // slide him off centre, and the whole point of this rig is that the drag means one thing.
+        //
+        // The limit is Arena's own shape, not a pair of numbers copied from it — the last time the
+        // pitch changed, every place holding its own copy of the bounds became wrong at once.
         [Tooltip("Never shorten the arm below this fraction, or the camera ends up inside the player.")]
         public float minArm = 0.3f;
 
@@ -83,12 +81,11 @@ namespace KongBall
             Vector3 focus = _target.position + Vector3.up * lookHeight;
             Vector3 arm = -(rot * Vector3.forward) * backDistance;
             Vector3 camPos = focus + arm * ArmFraction(focus, arm);
-            // Ultima difesa: se nemmeno il braccio minimo ci sta, la posizione viene tagliata. Questo
-            // sposta il giocatore dal centro dello schermo, ed e' il motivo per cui viene per ultima e
-            // non per prima — ma e' meglio di uno schermo pieno del dietro degli spalti. Serve solo
-            // quando il giocatore e' appiccicato a un muro e la camera guarda verso l'esterno.
-            camPos.x = Mathf.Clamp(camPos.x, -insideHalfX, insideHalfX);
-            camPos.z = Mathf.Clamp(camPos.z, -insideHalfZ, insideHalfZ);
+            // The arm has a floor, so with the player pressed against the wall and the camera
+            // dragged straight outward the shortened arm can still poke through. Then, and only
+            // then, the position is pushed back in — which slides the player off centre, which is
+            // why it is the last resort and not the first.
+            camPos = Arena.PushInside(camPos);
             if (instant)
                 transform.position = camPos;
             else
@@ -96,24 +93,20 @@ namespace KongBall
             transform.rotation = rot;
         }
 
-        // How much of the arm fits before the camera leaves the arena's clear interior.
+        // How much of the arm fits before the camera leaves the pitch. Bisection rather than an
+        // analytic solve: the boundary has rounded corners, and twelve halvings land within a
+        // centimetre of it for a 10 m arm — far below anything the eye can see in a camera move.
         float ArmFraction(Vector3 focus, Vector3 arm)
         {
-            float f = Mathf.Min(AxisFraction(focus.x, arm.x, insideHalfX),
-                                AxisFraction(focus.z, arm.z, insideHalfZ));
-            return Mathf.Clamp(f, minArm, 1f);
-        }
-
-        // Fraction of d that can be walked from p before |p + f*d| passes half. Returns 1 when the
-        // arm points inward, or when it is short enough not to matter.
-        static float AxisFraction(float p, float d, float half)
-        {
-            if (Mathf.Abs(d) < 1e-4f) return 1f;
-            float wall = d > 0f ? half : -half;
-            float f = (wall - p) / d;
-            // f <= 0 means p has already passed that wall and the arm points further out: give up
-            // the whole arm, ArmFraction's floor will keep the camera off the player.
-            return f <= 0f ? 0f : Mathf.Min(1f, f);
+            if (Arena.Distance(focus.x + arm.x, focus.z + arm.z) < 0f) return 1f;   // the usual case
+            float lo = 0f, hi = 1f;
+            for (int i = 0; i < 12; i++)
+            {
+                float m = (lo + hi) * 0.5f;
+                if (Arena.Distance(focus.x + arm.x * m, focus.z + arm.z * m) < 0f) lo = m;
+                else hi = m;
+            }
+            return Mathf.Clamp(lo, minArm, 1f);
         }
     }
 }

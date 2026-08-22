@@ -370,8 +370,14 @@ sotto il 5% la scimmia comincia a fare i bozzi. **Controlla il risultato con un 
 numero**: si può renderizzare un `.glb` headless con three.js e Chromium, ed è così che quel 10% è
 stato scelto.
 
-E due invarianti che sembrano dettagli:
+E tre invarianti che sembrano dettagli:
 
+- **La forma del campo sta in `Assets/Scripts/Arena.cs`, e solo lì.** Muro, vernice, controllo di
+  palla fuori e limite della camera la leggono tutti da quelle costanti. Prima erano quattro copie
+  diverse — un rettangolo di scatole nella scena, un altro in `ArenaDressing`, un `|z| > 16` scritto
+  a mano in `NetBall` e due numeri in `MatchCamera` — e appena il campo è cambiato la palla ha
+  iniziato a teletrasportarsi al centro mentre era ancora in gioco. Se allarghi il campo, tocchi un
+  numero solo. Se aggiungi un posto che ha bisogno di sapere dov'è il bordo, **chiedilo ad `Arena`**.
 - `NetPlayer.prefab` è `DestroyWhenStateAuthorityLeaves` — il tuo avatar deve sparire quando esci.
   È la ragione per cui i bot oggi vivono solo in allenamento.
 - `NetLauncher.Netcode` è ciò che decide chi incontra chi, e lo calcola la pipeline. Non trasformarlo

@@ -12,16 +12,16 @@ namespace KongBall
     // squashing a 15 m arena into a 1.15 m pancake. At a uniform scale it fits, so ~180 instanced
     // copies of two repeated models became one mesh and one draw call.
     //
-    // What is left still holds the old rules:
-    //  - nothing here has a collider. The tuned collision boxes in the scene are the only physics.
-    //  - the pitch markings derive from the SAME constants as those boxes, so the paint cannot drift
-    //    away from where the ball actually bounces.
+    // It also builds the wall the ball bounces off. That used to be 52 boxes placed by hand in the
+    // scene, next to a pitch painted by this file from its own copy of the bounds — two descriptions
+    // of one pitch, free to disagree, and they did. Both now come from Arena, so they cannot.
+    //
+    // The old rule still holds: the decoration itself never carries a collider. The only physics
+    // here is the wall, and it is built from the touchline, not drawn near it.
     public class ArenaDressing : MonoBehaviour
     {
-        [Header("Pitch footprint — mirrors the collision boxes")]
-        public float halfX = 23.3f;      // end walls
-        public float halfZ = 17.4f;      // touchlines
-
+        // La forma del campo NON sta qui: sta in Arena, perche' la devono usare identica anche i
+        // muri e il controllo di palla fuori. Qui restano solo i parametri di come si dipinge.
         [Header("Sand")]
         public float sandRadius = 140f;
 
@@ -41,31 +41,98 @@ namespace KongBall
 
         void Start()
         {
-            Material pitchMat = HideCollisionBoxes();
+            PlaceArena();
 
             var holder = new GameObject("Scenery").transform;
             holder.SetParent(transform, false);
 
+            Material pitchMat = GroundMaterial();
+            BuildWalls();
             BuildSand(holder, pitchMat);
             BuildPitchSurface(holder, pitchMat);
         }
 
-        // The white boxes around the pitch are the SAME objects that carry the colliders, so only
-        // their renderers go. Disabling the objects would delete the arena's physics.
-        //
-        // ArenaVis is deliberately NOT touched any more: it is the arena now. It used to be hidden
-        // here, which is how the project ended up with two arenas and only one of them visible.
-        //
-        // Returns the Ground material, which is a known-good URP material the sand can be built from.
-        Material HideCollisionBoxes()
+        // The model is placed from the constants rather than trusted to whatever the scene says.
+        // The scene carries the same numbers so the Editor view is right, but if the two ever
+        // disagree the code wins — a pitch painted to one shape inside an arena standing somewhere
+        // else is the failure this whole file exists to prevent.
+        static void PlaceArena()
         {
-            int n = 0;
-            var walls = GameObject.Find("Walls");
-            if (walls != null)
-                foreach (var r in walls.GetComponentsInChildren<Renderer>(true)) { r.enabled = false; n++; }
-            else Debug.LogWarning("[Arena] no 'Walls' object to hide");
-            Debug.Log("[Arena] hidden " + n + " renderers (colliders untouched)");
+            var vis = GameObject.Find("ArenaVis");
+            if (vis == null) { Debug.LogWarning("[Arena] no 'ArenaVis' in the scene"); return; }
+            vis.transform.localPosition = new Vector3(Arena.ModelX, Arena.ModelY, Arena.ModelZ);
+            vis.transform.localScale = Vector3.one * Arena.ModelScale;
+        }
 
+        // The wall the ball bounces off, built along the touchline so it cannot disagree with the
+        // paint. It used to be 52 boxes placed by hand in the scene, which is exactly how the paint
+        // and the physics came to describe two different pitches.
+        //
+        // One tall run rather than a low wall plus an invisible high one: nothing here is drawn, so
+        // a single 10 m box per segment does both jobs. Segments overlap slightly, because a
+        // hairline gap between two colliders is a hole the ball will eventually find.
+        static void BuildWalls()
+        {
+            var root = new GameObject("ArenaWalls").transform;
+            var pts = Arena.Outline();
+            int n = 0;
+            for (int i = 0; i < pts.Length; i++)
+            {
+                Vector3 a = pts[i], b = pts[(i + 1) % pts.Length];
+
+                // The two straight runs behind the goals are the goal mouths: the wall has to open
+                // there or the ball bounces off thin air a metre short of the net. Everything else
+                // is built whole.
+                bool fondo = Mathf.Abs(a.x) > Arena.HalfX - 0.01f && Mathf.Abs(b.x) > Arena.HalfX - 0.01f;
+                if (fondo)
+                {
+                    float lato = Mathf.Sign(a.x);
+                    float bordo = Arena.HalfZ - Arena.CornerRadius;        // where the arc takes over
+                    if (bordo > Arena.GoalMouthHalfZ)
+                    {
+                        n += Segment(root, n, new Vector3(lato * Arena.HalfX, 0f, Arena.GoalMouthHalfZ),
+                                              new Vector3(lato * Arena.HalfX, 0f, bordo), 0f, Arena.WallHeight);
+                        n += Segment(root, n, new Vector3(lato * Arena.HalfX, 0f, -bordo),
+                                              new Vector3(lato * Arena.HalfX, 0f, -Arena.GoalMouthHalfZ), 0f, Arena.WallHeight);
+                    }
+                    // Above the crossbar the mouth closes again. A shot that goes over is a miss,
+                    // and a miss should come back into play — not sail into the stands and get
+                    // teleported to the centre spot by the out-of-bounds net.
+                    n += Segment(root, n, new Vector3(lato * Arena.HalfX, 0f, -Arena.GoalMouthHalfZ),
+                                          new Vector3(lato * Arena.HalfX, 0f, Arena.GoalMouthHalfZ),
+                                          Arena.GoalHeight, Arena.WallHeight);
+                    continue;
+                }
+                n += Segment(root, n, a, b, 0f, Arena.WallHeight);
+            }
+            Debug.Log("[Arena] " + n + " wall segments built from the touchline, goal mouths open");
+        }
+
+        static int Segment(Transform root, int n, Vector3 a, Vector3 b, float da, float a2)
+        {
+            Vector3 along = b - a;
+            float len = along.magnitude;
+            float alt = a2 - da;
+            if (len < 1e-3f || alt < 1e-3f) return 0;
+
+            var go = new GameObject("Wall_" + n);
+            go.transform.SetParent(root, false);
+            go.transform.position = (a + b) * 0.5f + Vector3.up * (da + alt * 0.5f);
+            go.transform.rotation = Quaternion.LookRotation(along / len, Vector3.up);
+
+            var box = go.AddComponent<BoxCollider>();
+            // Longer than the gap it fills: two colliders meeting exactly edge to edge leave a seam
+            // a fast ball can pass through between two physics steps.
+            box.size = new Vector3(Arena.WallThickness, alt, len + 0.3f);
+            return 1;
+        }
+
+        // A known-good URP material to build the sand and the pitch from: the Ground box is visibly
+        // drawing, so whatever shader it has survived the build. CreatePrimitive hands back the
+        // built-in Standard material instead, which has no shader under URP — that is what turned
+        // the whole ground magenta on device.
+        static Material GroundMaterial()
+        {
             var ground = GameObject.Find("Ground");
             var gr = ground != null ? ground.GetComponent<Renderer>() : null;
             return gr != null ? gr.sharedMaterial : null;
@@ -121,14 +188,19 @@ namespace KongBall
         // the touchline the ball bounces off, not an approximation of it.
         void BuildPitchSurface(Transform holder, Material source)
         {
+            // Sized to the WHOLE Ground box, not to the pitch. The pitch is a rounded rectangle
+            // and the floor is square, so if the quad were only as big as the pitch, the strip of
+            // Ground sticking out around it would show as a green border with a rounded green
+            // island inside. Painting the whole floor — grass inside the touchline, sand outside —
+            // makes the shape read as the pitch and the rest as beach, with no seam.
             var ground = GameObject.Find("Ground");
             var gr = ground != null ? ground.GetComponent<Renderer>() : null;
             if (gr == null) { Debug.LogWarning("[Arena] no 'Ground' to paint over"); return; }
-
             Bounds gb = gr.bounds;
             if (gb.size.x < 1e-3f || gb.size.z < 1e-3f) return;
 
-            var tex = PaintPitch(gb.size.x, gb.size.z);
+            float larghezza = gb.size.x, profondita = gb.size.z;
+            var tex = PaintPitch(larghezza, profondita);
             if (tex == null) return;
 
             var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -139,7 +211,7 @@ namespace KongBall
             // V along world z. That is what lets the markings be laid out in metres below.
             quad.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
             quad.transform.position = new Vector3(gb.center.x, gb.max.y + 0.01f, gb.center.z);
-            quad.transform.localScale = new Vector3(gb.size.x, gb.size.z, 1f);
+            quad.transform.localScale = new Vector3(larghezza, profondita, 1f);
 
             Material m = source != null ? new Material(source) : SandMaterial(null);
             if (m == null) { Destroy(quad); return; }
@@ -163,7 +235,7 @@ namespace KongBall
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
             Debug.Log("[Arena] pitch painted " + tex.width + "x" + tex.height + " over "
-                      + gb.size.x.ToString("0.0") + " x " + gb.size.z.ToString("0.0") + " m");
+                      + larghezza.ToString("0.0") + " x " + profondita.ToString("0.0") + " m");
         }
 
         Texture2D PaintPitch(float worldW, float worldD)
@@ -186,6 +258,20 @@ namespace KongBall
                 for (int i = 0; i < w; i++)
                 {
                     float x = (i + 0.5f) * mx - worldW * 0.5f;
+
+                    // Outside the touchline the quad is sand, in the same colour as the plane
+                    // underneath it. The pitch is a rounded rectangle and the quad is square, so
+                    // without this the corners would be four green wedges lying on the beach.
+                    float fuori = Arena.Distance(x, z);
+                    if (fuori > lineWidth)
+                    {
+                        var sabbia = new Color(0.93f, 0.87f, 0.71f);
+                        float grana = Mathf.PerlinNoise(x * 1.3f + 5f, z * 1.3f + 2f) * 0.06f;
+                        sabbia *= 0.97f + grana;
+                        sabbia.a = 1f;
+                        pixels[j * w + i] = sabbia;
+                        continue;
+                    }
 
                     // Mown stripes, the thing that actually makes turf read as a pitch.
                     float band = Mathf.Repeat((x + worldW * 0.5f) / stripe, 1f) < 0.5f ? 0f : 1f;
@@ -213,10 +299,17 @@ namespace KongBall
 
         // Every measurement is the real proportion of a football pitch, rescaled from 105 x 68 m onto
         // the arena's own 2*halfX by 2*halfZ playing area.
+        // The touchline is no longer four straight lines: it is the outline of the shape in Arena,
+        // corners included, so the paint and the wall are the same curve by construction. Everything
+        // else — halfway line, centre circle, the two boxes — is laid out in metres off the same
+        // half-extents, which is what keeps it looking like a pitch and not like a decal.
+        //
+        // The corner arcs of a real pitch are gone: on a shape whose corners are already a 16 m
+        // radius they would be an arc drawn on an arc.
         float Markings(float x, float z, float px)
         {
             float ax = Mathf.Abs(x), az = Mathf.Abs(z);
-            float len = halfX * 2f, wid = halfZ * 2f;
+            float len = Arena.HalfX * 2f, wid = Arena.HalfZ * 2f;
 
             float boxDepth = 16.5f / 105f * len, boxHalf = 40.32f / 68f * wid * 0.5f;
             float areaDepth = 5.5f / 105f * len, areaHalf = 18.32f / 68f * wid * 0.5f;
@@ -224,22 +317,17 @@ namespace KongBall
             float circle = 9.15f / 68f * wid;
 
             float ink = 0f;
-            // Touchlines and goal lines, drawn just inside the walls.
-            if (az <= halfZ + px) ink = Mathf.Max(ink, Edge(ax, halfX, px));
-            if (ax <= halfX + px) ink = Mathf.Max(ink, Edge(az, halfZ, px));
+            // The touchline: where the distance to the boundary is zero.
+            ink = Mathf.Max(ink, Edge(Arena.Distance(x, z), 0f, px));
             // Halfway line and centre circle.
-            if (az <= halfZ) ink = Mathf.Max(ink, Edge(ax, 0f, px));
+            if (az <= Arena.HalfZ) ink = Mathf.Max(ink, Edge(ax, 0f, px));
             ink = Mathf.Max(ink, Edge(Mathf.Sqrt(x * x + z * z), circle, px));
             ink = Mathf.Max(ink, Fill(Mathf.Sqrt(x * x + z * z), 0.16f, px));
 
             // Penalty area, goal area and penalty spot, mirrored at both ends.
-            ink = Mathf.Max(ink, Box(ax, az, halfX - boxDepth, boxHalf, px));
-            ink = Mathf.Max(ink, Box(ax, az, halfX - areaDepth, areaHalf, px));
-            ink = Mathf.Max(ink, Fill(Mathf.Sqrt((ax - (halfX - spot)) * (ax - (halfX - spot)) + z * z), 0.16f, px));
-
-            // Corner arcs.
-            float cd = Mathf.Sqrt((ax - halfX) * (ax - halfX) + (az - halfZ) * (az - halfZ));
-            if (ax <= halfX && az <= halfZ) ink = Mathf.Max(ink, Edge(cd, 1f / 105f * len, px));
+            ink = Mathf.Max(ink, Box(ax, az, Arena.HalfX - boxDepth, boxHalf, px));
+            ink = Mathf.Max(ink, Box(ax, az, Arena.HalfX - areaDepth, areaHalf, px));
+            ink = Mathf.Max(ink, Fill(Mathf.Sqrt((ax - (Arena.HalfX - spot)) * (ax - (Arena.HalfX - spot)) + z * z), 0.16f, px));
 
             return Mathf.Clamp01(ink);
         }
@@ -261,7 +349,7 @@ namespace KongBall
         {
             float ink = 0f;
             if (az <= half + lineWidth) ink = Mathf.Max(ink, Edge(ax, front, px));
-            if (ax >= front - lineWidth && ax <= halfX) ink = Mathf.Max(ink, Edge(az, half, px));
+            if (ax >= front - lineWidth && ax <= Arena.HalfX) ink = Mathf.Max(ink, Edge(az, half, px));
             return ink;
         }
     }
