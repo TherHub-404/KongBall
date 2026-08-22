@@ -268,7 +268,52 @@ namespace KongBall
             });
             var s = report.summary;
             Debug.LogFormat("CMDBUILD result={0} errors={1} time={2}s", s.result, s.totalErrors, (int)s.totalTime.TotalSeconds);
+            LogSize(report);
             EditorApplication.Exit(s.result == BuildResult.Succeeded ? 0 : 1);
+        }
+
+        // What the app WEIGHS, and where the weight is.
+        //
+        // Read from the BuildReport that BuildPlayer already returns, not scraped out of Unity's
+        // textual "Build Report" in the log: the numbers are here as typed values, while the text
+        // format changes between versions and a parser for it would break silently on the upgrade.
+        //
+        // The CMDBUILD prefix is OURS, so the pipeline can pull these lines into the run summary
+        // without guessing at anybody else's wording. That matters because the log is twenty thousand
+        // lines and the person who needs this number works from a phone.
+        static void LogSize(BuildReport report)
+        {
+            if (report == null) return;
+
+            var perTipo = new Dictionary<string, ulong>();
+            var tutti = new List<PackedAssetInfo>();
+
+            foreach (var pacco in report.packedAssets)
+            {
+                foreach (var voce in pacco.GetContents())
+                {
+                    tutti.Add(voce);
+                    string tipo = voce.type != null ? voce.type.Name : "?";
+                    perTipo.TryGetValue(tipo, out ulong somma);
+                    perTipo[tipo] = somma + voce.packedSize;
+                }
+            }
+
+            Debug.LogFormat("CMDBUILD size: TOTALE {0}", Mb(report.summary.totalSize));
+
+            // Per tipo prima: e' la riga che dice SE il problema sono le texture, e chiude la domanda
+            // senza dover leggere l'elenco.
+            foreach (var kv in perTipo.OrderByDescending(k => k.Value).Take(12))
+                Debug.LogFormat("CMDBUILD size: tipo  {0,-24} {1}", kv.Key, Mb(kv.Value));
+
+            foreach (var voce in tutti.OrderByDescending(v => v.packedSize).Take(25))
+                Debug.LogFormat("CMDBUILD size: asset {0,10}  {1}", Mb(voce.packedSize),
+                                string.IsNullOrEmpty(voce.sourceAssetPath) ? "(interno a Unity)" : voce.sourceAssetPath);
+        }
+
+        static string Mb(ulong byt)
+        {
+            return (byt / 1048576.0).ToString("0.0") + " MB";
         }
     }
 }
