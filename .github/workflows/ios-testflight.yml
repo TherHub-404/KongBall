@@ -61,7 +61,7 @@ on:
 # quando ne arriva una nuova — ma cosi' due merge ravvicinati diventano UNA build che contiene le
 # cose di due persone, e nessuno sa piu' di chi e' la versione che sta provando. In coda ogni merge
 # produce esattamente una build, quindi "una build = una PR = una persona", che e' precisamente cio'
-# che serve al timbro dentro il gioco e al changelog su Telegram.
+# che serve al timbro dentro il gioco e al changelog nel gruppo.
 concurrency:
   group: ios-testflight
   cancel-in-progress: false
@@ -291,8 +291,10 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Facoltativo come Telegram: manda a quelle configurate, e avvisa solo se non ce n'e' nessuna.
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GITHUB_TOKEN: ${{ github.token }}
           BUILD_OUTCOME: ${{ job.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           WORKFLOW_FILE: ios-testflight.yml
-        run: python3 .github/scripts/telegram_notify.py
+        run: python3 .github/scripts/notify.py

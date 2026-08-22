@@ -26,6 +26,8 @@ SEGRETI = [
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{16,}"), "un token GitHub"),
     (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), "un personal access token GitHub"),
     (re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{30,}"), "un token di bot Telegram"),
+    # L'URL di un webhook Discord E' la credenziale: chi lo legge scrive nel canale.
+    (re.compile(r"https://discord(?:app)?\.com/api/webhooks/\d+/[\w-]{20,}"), "un webhook Discord"),
 ]
 
 # File che non devono stare nell'indice di git. .gitignore li copre gia', ma `git add -f` lo scavalca
