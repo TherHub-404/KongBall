@@ -286,16 +286,23 @@ namespace KongBall
             if (report == null) return;
 
             var perTipo = new Dictionary<string, ulong>();
-            var tutti = new List<PackedAssetInfo>();
+            // Sommato per file, non per sotto-asset: un .glb entra nella build come una mesh piu' tre
+            // texture, e quattro righe con lo stesso path che dicono "4.0 MB" non rispondono alla
+            // domanda "quanto pesa questo modello".
+            var perFile = new Dictionary<string, ulong>();
 
             foreach (var pacco in report.packedAssets)
             {
                 foreach (var voce in pacco.contents)
                 {
-                    tutti.Add(voce);
                     string tipo = voce.type != null ? voce.type.Name : "?";
                     perTipo.TryGetValue(tipo, out ulong somma);
                     perTipo[tipo] = somma + voce.packedSize;
+
+                    string file = string.IsNullOrEmpty(voce.sourceAssetPath)
+                        ? "(interno a Unity)" : voce.sourceAssetPath;
+                    perFile.TryGetValue(file, out ulong sommaFile);
+                    perFile[file] = sommaFile + voce.packedSize;
                 }
             }
 
@@ -306,9 +313,8 @@ namespace KongBall
             foreach (var kv in perTipo.OrderByDescending(k => k.Value).Take(12))
                 Debug.LogFormat("CMDBUILD size: tipo  {0,-24} {1}", kv.Key, Mb(kv.Value));
 
-            foreach (var voce in tutti.OrderByDescending(v => v.packedSize).Take(25))
-                Debug.LogFormat("CMDBUILD size: asset {0,10}  {1}", Mb(voce.packedSize),
-                                string.IsNullOrEmpty(voce.sourceAssetPath) ? "(interno a Unity)" : voce.sourceAssetPath);
+            foreach (var kv in perFile.OrderByDescending(k => k.Value).Take(25))
+                Debug.LogFormat("CMDBUILD size: file  {0,10}  {1}", Mb(kv.Value), kv.Key);
         }
 
         static string Mb(ulong byt)
