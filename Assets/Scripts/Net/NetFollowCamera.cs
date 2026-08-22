@@ -9,6 +9,10 @@ namespace KongBall
     {
         public Transform target;
         public Vector3 offset = new Vector3(0f, 8f, -9f); // behind & above
+        // NOTE: this rig has the same problem MatchCamera solves — 9 m behind a player standing on
+        // the far touchline puts the camera inside the arena's stands. It is left alone because the
+        // scene carries a MatchCamera and this code never runs there; if it ever becomes the real
+        // camera, bring over MatchCamera's arm shortening first.
         public float pitch = 40f;                          // fixed downward tilt
         public float followLerp = 10f;
 

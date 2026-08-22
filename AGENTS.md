@@ -125,6 +125,14 @@ simulando, e tutte e tre nascondevano un errore che a occhio non si vedeva. L'ul
 istruttiva — a piena potenza la palla passa **sopra** la traversa da dieci metri in su, quindi la
 potenza del tiro non può crescere con la distanza come sembrerebbe ovvio.
 
+Il caso più caro di tutti è durato mesi: il modello dell'arena era in scena con scala **(28, 3, 28)**.
+Non uniforme: schiacciava un'arena da 15 metri in una frittella da 1,15. Guardandola così sembrava
+inutilizzabile, quindi è stata spenta e spalti, ringhiera e piante sono stati ricostruiti a mano —
+180 oggetti e 300 righe di codice — mentre il modello continuava a pesare 19,6 MB nella build senza
+comparire su nessuno schermo. **Prima di concludere che un asset non va bene, controlla che sia
+scalato e posizionato come dovrebbe.** E si può controllare: un `.glb` si renderizza headless con
+three.js e Chromium, senza Editor, e si guarda.
+
 E il rovescio: in questo progetto una posizione dichiarata "verificata" era stata controllata sulla
 superficie sbagliata, ed è arrivata sul telefono con il campo tutto magenta. Se non l'hai provato, si
 scrive **"non l'ho provato"**. Nessuno si arrabbia per un limite dichiarato; ci si arrabbia per una
