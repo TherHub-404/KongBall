@@ -125,6 +125,14 @@ simulando, e tutte e tre nascondevano un errore che a occhio non si vedeva. L'ul
 istruttiva — a piena potenza la palla passa **sopra** la traversa da dieci metri in su, quindi la
 potenza del tiro non può crescere con la distanza come sembrerebbe ovvio.
 
+Il caso più caro di tutti è durato mesi: il modello dell'arena era in scena con scala **(28, 3, 28)**.
+Non uniforme: schiacciava un'arena da 15 metri in una frittella da 1,15. Guardandola così sembrava
+inutilizzabile, quindi è stata spenta e spalti, ringhiera e piante sono stati ricostruiti a mano —
+180 oggetti e 300 righe di codice — mentre il modello continuava a pesare 19,6 MB nella build senza
+comparire su nessuno schermo. **Prima di concludere che un asset non va bene, controlla che sia
+scalato e posizionato come dovrebbe.** E si può controllare: un `.glb` si renderizza headless con
+three.js e Chromium, senza Editor, e si guarda.
+
 E il rovescio: in questo progetto una posizione dichiarata "verificata" era stata controllata sulla
 superficie sbagliata, ed è arrivata sul telefono con il campo tutto magenta. Se non l'hai provato, si
 scrive **"non l'ho provato"**. Nessuno si arrabbia per un limite dichiarato; ci si arrabbia per una
@@ -351,6 +359,16 @@ una palla e due scimmie. Il numero da guardare non è quanto pesa il file in rep
 la texture. Per rimpicciolirle senza Editor c'è `.github/scripts/glb_textures.py`, che riscrive il
 `.glb` lasciando la geometria intatta byte per byte. Un fondale sta a 512, una cosa che si vede da
 vicino a 1024; 2048 va giustificato.
+
+L'altra metà sono i **triangoli**. Gli asset di questo gioco sono arrivati con quasi due milioni di
+triangoli in tre modelli: una porta da 730.000, il campo da 857.000, la scimmia da 341.000. Su un
+telefono quella non è solo build che pesa, è calore e frame persi. Si riducono con
+`npx @gltf-transform/cli simplify in.glb out.glb --ratio 0.1 --error 0.005`, che è
+meshoptimizer e non tocca né le texture né i nomi dei nodi — e i nomi contano, perché se cambiano i
+prefab perdono il riferimento alla mesh. Al 10% i tre modelli non si distinguono dagli originali;
+sotto il 5% la scimmia comincia a fare i bozzi. **Controlla il risultato con un occhio, non solo col
+numero**: si può renderizzare un `.glb` headless con three.js e Chromium, ed è così che quel 10% è
+stato scelto.
 
 E due invarianti che sembrano dettagli:
 

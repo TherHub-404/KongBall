@@ -39,9 +39,11 @@ namespace KongBall
         const string IconPath = "Assets/AppIcon/KongBallIcon1024.png";
         const string LogoPath = "Assets/Resources/Menu/Logo.png";
 
-        // The same yellow as MenuStage.Background, so the launch screen and the menu behind it are one
-        // continuous colour instead of two different yellows meeting at a cut.
-        static readonly Color SplashYellow = new Color(0.97f, 0.78f, 0.24f);
+        // Black, asked for explicitly. Note the trade-off it accepts: the splash used to be the same
+        // yellow as MenuStage.Background so that the launch screen and the menu behind it read as one
+        // continuous colour. Black means there is now a cut between the two — the wordmark on black,
+        // then the yellow menu. That is deliberate.
+        static readonly Color SplashBackground = Color.black;
 
         // How long the wordmark stays up. Unity will not go below two seconds, so this is the number
         // to raise or lower if the launch screen feels rushed or slow.
@@ -73,7 +75,7 @@ namespace KongBall
             EditorApplication.Exit(0);
         }
 
-        // Launch screen: the KongBall wordmark on the menu's yellow, in place of the default dark grey
+        // Launch screen: the KongBall wordmark on black, in place of the default dark grey
         // "Made with Unity".
         //
         // Whether Unity's own logo can be dropped depends on the licence, and this build runs on
@@ -93,7 +95,7 @@ namespace KongBall
 
             PlayerSettings.SplashScreen.show = true;              // we want a splash: ours
             PlayerSettings.SplashScreen.showUnityLogo = false;    // granted or refused by the licence
-            PlayerSettings.SplashScreen.backgroundColor = SplashYellow;
+            PlayerSettings.SplashScreen.backgroundColor = SplashBackground;
             PlayerSettings.SplashScreen.drawMode = PlayerSettings.SplashScreen.DrawMode.UnityLogoBelow;
             PlayerSettings.SplashScreen.animationMode = PlayerSettings.SplashScreen.AnimationMode.Static;
             // Duration first, sprite second — Create(float, Sprite), not the other way round.
