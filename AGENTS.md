@@ -392,7 +392,7 @@ sotto il 5% la scimmia comincia a fare i bozzi. **Controlla il risultato con un 
 numero**: si può renderizzare un `.glb` headless con three.js e Chromium, ed è così che quel 10% è
 stato scelto.
 
-E tre invarianti che sembrano dettagli:
+E quattro invarianti che sembrano dettagli:
 
 - **La forma del campo sta in `Assets/Scripts/Arena.cs`, e solo lì.** Muro, vernice, controllo di
   palla fuori e limite della camera la leggono tutti da quelle costanti. Prima erano quattro copie
@@ -400,6 +400,10 @@ E tre invarianti che sembrano dettagli:
   a mano in `NetBall` e due numeri in `MatchCamera` — e appena il campo è cambiato la palla ha
   iniziato a teletrasportarsi al centro mentre era ancora in gioco. Se allarghi il campo, tocchi un
   numero solo. Se aggiungi un posto che ha bisogno di sapere dov'è il bordo, **chiedilo ad `Arena`**.
+- **Una scatola di collisione non ha bisogno di sapersi disegnare.** Nella scena i collider non
+  hanno `MeshRenderer`. Per anni ne avevano uno e un ciclo all'avvio li spegneva tutti: il giorno
+  che quel ciclo è stato tolto, sei parallelepipedi bianchi sono comparsi attorno alla porta in
+  partita. Se aggiungi un collider, aggiungi solo il collider.
 - `NetPlayer.prefab` è `DestroyWhenStateAuthorityLeaves` — il tuo avatar deve sparire quando esci.
   È la ragione per cui i bot oggi vivono solo in allenamento.
 - `NetLauncher.Netcode` è ciò che decide chi incontra chi, e lo calcola la pipeline. Non trasformarlo
