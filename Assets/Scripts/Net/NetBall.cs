@@ -37,12 +37,11 @@ namespace KongBall
         [Tooltip("Hard cap on how far the mesh may sit from the real ball (metres).")]
         public float maxPredictOffset = 1.2f;
 
-        [Header("Field / goals")]
-        public float halfX = 20f;
-        public float halfZ = 12f;
-        public float goalHalfZ = 3.4f;   // goal mouth half-width (z)
-        public float goalLineX = 21.5f;  // x the ball must cross to score
-        public float goalHeight = 3.0f;  // max y that still counts
+        // The pitch and the goals are NOT described here any more: they live in Arena, because the
+        // wall the ball bounces off, the paint the player sees and the checks below all have to
+        // agree. This file used to carry halfX/halfZ as dead fields while the real limit was a
+        // hardcoded "|z| > 16" twenty lines down — so when the pitch grew, the ball started
+        // teleporting to the centre while it was still in play.
 
         // WHICH OBJECT holds the ball, not which person. It used to be a PlayerRef, which quietly
         // meant "only something with a network connection can ever carry the ball" — so a bot, which
@@ -152,9 +151,11 @@ namespace KongBall
             SyncKinematic();
             if (!HasStateAuthority || _rb == null) return;
 
-            // Out-of-bounds safety net.
+            // Out-of-bounds safety net. The slack is deliberate: the wall already keeps the ball
+            // in, so getting here means physics tunnelled through it. Resetting the instant the
+            // ball touches the touchline would instead punish a legal ball resting against the wall.
             Vector3 bp = _rb.position;
-            if (bp.y < -3f || Mathf.Abs(bp.x) > 27f || Mathf.Abs(bp.z) > 16f) { ResetToCentre(); return; }
+            if (bp.y < -3f || !Arena.Contains(bp, 2f)) { ResetToCentre(); return; }
 
             // POSSESSION — decided here and nowhere else. Picking the ball up is a purely spatial
             // fact, so the authority (which already holds everyone's replicated positions) resolves
@@ -182,10 +183,10 @@ namespace KongBall
             if (mc != null && mc.CanScore)
             {
                 Vector3 fp = _rb.position;
-                if (Mathf.Abs(fp.z) < goalHalfZ && fp.y < goalHeight)
+                if (Mathf.Abs(fp.z) < Arena.GoalHalfZ && fp.y < Arena.GoalHeight)
                 {
-                    if (fp.x > goalLineX) { ScoreGoal(mc, 0); return; }   // Blue scores (+x)
-                    if (fp.x < -goalLineX) { ScoreGoal(mc, 1); return; }  // Red scores (-x)
+                    if (fp.x > Arena.GoalLineX) { ScoreGoal(mc, 0); return; }   // Blue scores (+x)
+                    if (fp.x < -Arena.GoalLineX) { ScoreGoal(mc, 1); return; }  // Red scores (-x)
                 }
             }
 
