@@ -213,6 +213,28 @@ Vale anche quando **non sei tu a proporre il nome.** Diversi strumenti ne scelgo
 PR.** Il nome del ramo è una responsabilità di chi lavora, non un dettaglio della piattaforma, e non
 va chiesto alla persona: te l'ha già detto quando ti ha detto come si chiama.
 
+### 12-bis. Un branch nuovo parte da `dev` aggiornato. Sempre.
+
+Questa è costata mezz'ora, quindi vale la riga. Le PR qui si mergiano **in squash**: le tue
+modifiche arrivano su `dev` come un commit nuovo, con lo stesso contenuto ma un'altra identità. Il
+tuo branch vecchio non è più un antenato di `dev`.
+
+Quindi se ramifichi il lavoro seguente **dal branch vecchio** invece che da `dev`, git vede le stesse
+modifiche fatte due volte e la PR nasce **in conflitto**. E il conflitto non è solo una seccatura:
+finché una PR è in conflitto GitHub non riesce a costruire il commit di merge, **quindi il check non
+parte nemmeno**. Sembra che le Actions siano rotte, e invece è il branch che pende dal posto sbagliato.
+
+```
+git fetch origin dev
+git checkout -B mio/nome-feature origin/dev
+```
+
+Se ci sei già dentro, non provare a risolvere il conflitto a mano: ricrea il branch da `dev` e
+riporta sopra il tuo albero, poi **verifica con `git diff` che il contenuto sia identico** a quello
+di prima e che rispetto a `dev` cambino solo i file del lavoro nuovo.
+
+---
+
 ### 13. La PR va su `dev`. Mai su `main`.
 
 > "Matteo dice che non si pusha su `main` — apro una PR su `dev`."
