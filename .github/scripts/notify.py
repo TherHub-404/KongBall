@@ -32,6 +32,11 @@ import urllib.parse
 import urllib.request
 
 GITHUB_API = "https://api.github.com"
+
+# Non e' cortesia: Cloudflare, davanti a Discord, RIFIUTA le richieste senza User-Agent con un 403 e
+# "error code: 1010". Verificato dal vivo — senza questa riga la notifica non parte, e il messaggio
+# d'errore non dice nemmeno perche'.
+UA = "kongball-ci"
 MAX_RIGHE = 15
 TIMEOUT = 30
 
@@ -47,9 +52,18 @@ def dettaglio(errore, chiave):
     contiene il token — sia per Telegram sia per il webhook di Discord.
     """
     try:
-        return " — " + str(json.load(errore).get(chiave, ""))
+        grezzo = errore.read()
     except Exception:
         return ""
+    if not grezzo:
+        return ""
+    try:
+        return " — " + str(json.loads(grezzo).get(chiave, ""))
+    except Exception:
+        # Non tutti gli errori sono JSON. Cloudflare risponde in testo semplice ("error code: 1010"),
+        # ed e' esattamente il caso in cui sapere cosa c'e' scritto fa la differenza fra dieci secondi
+        # e mezz'ora: la prima versione di questo helper cercava solo JSON e restituiva un 403 muto.
+        return " — " + grezzo[:200].decode("utf-8", "replace").replace("\n", " ").strip()
 
 
 def gh(path):
@@ -58,7 +72,7 @@ def gh(path):
         headers={
             "Authorization": "Bearer " + os.environ.get("GITHUB_TOKEN", ""),
             "Accept": "application/vnd.github+json",
-            "User-Agent": "kongball-ci",
+            "User-Agent": UA,
         },
     )
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
@@ -203,7 +217,7 @@ def invia_discord(webhook, payload):
     """Discord risponde 204 senza corpo quando ha accettato il messaggio."""
     corpo = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(webhook, data=corpo,
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", "User-Agent": UA})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         return r.status
 
