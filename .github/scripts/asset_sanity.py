@@ -88,6 +88,21 @@ WRAPPER = re.compile(
 CALL = re.compile(r'Resources\.Load[^(]*\(([^()]*)\)')
 BARE = re.compile(r'^\s*"([^"]+)"\s*$')
 JOINED = re.compile(r'^\s*(\w+)\s*\+\s*"([^"]+)"\s*$')
+# Resources.Load<GameObject>(Arena.ModelPath): la costante sta in un ALTRO file. Senza questo
+# caso il controllo passava sopra all'arena senza dire niente, che e' il modo peggiore per un
+# controllo di fallire — sembra che copra tutto e invece salta proprio quello nuovo.
+QUALIFICATO = re.compile(r'^\s*(\w+)\.(\w+)\s*$')
+
+# Le costanti stringa di tutto il progetto, indicizzate come "Classe.NOME". Il nome della classe
+# si prende dal file: qui vale, perche' ogni classe sta nel file che porta il suo nome.
+globali = {}
+for p in paths:
+    if not p.endswith(".cs"):
+        continue
+    classe = os.path.splitext(os.path.basename(p))[0]
+    with open(p, "r", errors="replace") as fh:
+        for nome_c, valore in re.findall(r'const\s+string\s+(\w+)\s*=\s*"([^"]*)"', fh.read()):
+            globali[classe + "." + nome_c] = valore
 
 checked = 0
 for p in paths:
@@ -113,9 +128,13 @@ for p in paths:
             name = m.group(1)
         else:
             m = JOINED.match(arg)
-            if not m or m.group(1) not in consts:
-                continue                      # dynamic: nothing to verify
-            name = consts[m.group(1)] + m.group(2)
+            if m and m.group(1) in consts:
+                name = consts[m.group(1)] + m.group(2)
+            else:
+                m = QUALIFICATO.match(arg)
+                if not m or (m.group(1) + "." + m.group(2)) not in globali:
+                    continue                  # dynamic: nothing to verify
+                name = globali[m.group(1) + "." + m.group(2)]
         checked += 1
         if name not in stems:
             problems.append('Resources.Load("' + name + '") non ha un asset corrispondente  [' + p + ']')

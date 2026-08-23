@@ -52,16 +52,32 @@ namespace KongBall
             BuildPitchSurface(holder, pitchMat);
         }
 
-        // The model is placed from the constants rather than trusted to whatever the scene says.
-        // The scene carries the same numbers so the Editor view is right, but if the two ever
-        // disagree the code wins — a pitch painted to one shape inside an arena standing somewhere
-        // else is the failure this whole file exists to prevent.
+        // The arena is instantiated here, not placed in the scene. The scene used to hold it and
+        // point at the mesh and the material by file ID — ids a .glb derives from the names inside
+        // it. Retexturing the model renamed them, so those references would have gone dead without
+        // a word and the arena simply would not have been drawn. Loading by path and taking
+        // whatever is inside has no such failure mode.
+        //
+        // Position and scale come from the constants for the same reason as before: a pitch painted
+        // to one shape inside an arena standing somewhere else is what this whole file exists to
+        // prevent.
         static void PlaceArena()
         {
-            var vis = GameObject.Find("ArenaVis");
-            if (vis == null) { Debug.LogWarning("[Arena] no 'ArenaVis' in the scene"); return; }
-            vis.transform.localPosition = new Vector3(Arena.ModelX, Arena.ModelY, Arena.ModelZ);
+            var modello = Resources.Load<GameObject>(Arena.ModelPath);
+            if (modello == null)
+            {
+                Debug.LogWarning("[Arena] missing Resources/" + Arena.ModelPath);
+                return;
+            }
+            var vis = Instantiate(modello);
+            vis.name = "ArenaVis";
+            vis.transform.SetPositionAndRotation(
+                new Vector3(Arena.ModelX, Arena.ModelY, Arena.ModelZ), Quaternion.identity);
             vis.transform.localScale = Vector3.one * Arena.ModelScale;
+
+            // Nothing about the arena is physics: the wall is built from the touchline below, and a
+            // mesh collider over 85.000 triangles of decorative rock would be both slower and worse.
+            foreach (var c in vis.GetComponentsInChildren<Collider>()) Destroy(c);
         }
 
         // The wall the ball bounces off, built along the touchline so it cannot disagree with the
