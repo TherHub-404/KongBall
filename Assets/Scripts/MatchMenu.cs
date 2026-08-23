@@ -19,8 +19,10 @@ namespace KongBall
 
         static readonly Color Quiet = new Color(0.10f, 0.14f, 0.12f, 0.62f);
         static readonly Color Sheet = new Color(0.05f, 0.09f, 0.07f, 0.90f);
+        // Danger has no equivalent in the bible's four-colour world and stays local, same as
+        // MainMenu's Warn. Neutral maps onto the shared secondary tone instead of its own one-off.
         static readonly Color Danger = new Color(0.62f, 0.16f, 0.11f);
-        static readonly Color Neutral = new Color(0.24f, 0.30f, 0.27f);
+        static readonly Color Neutral = Ui.WoodBrown;
 
         static MatchMenu _current;
 
@@ -61,6 +63,9 @@ namespace KongBall
             rt.sizeDelta = new Vector2(104f, 60f);
             rt.anchoredPosition = new Vector2(26f, -26f);
 
+            // Left flat, not toy-shaped, on purpose: this sits over the live pitch, and
+            // KONGBALL_UI_VISUAL_BIBLE #15/#19 asks for gameplay HUD to stay minimal — no decorative
+            // panel is worth competing with the field for attention here.
             var btn = open.gameObject.AddComponent<Button>();
             btn.targetGraphic = open;
             btn.onClick.AddListener(() => { if (_confirm != null) _confirm.SetActive(true); });
@@ -98,18 +103,19 @@ namespace KongBall
             _confirm.SetActive(false);
         }
 
+        // Toy-shaped, unlike the MENU corner button above: this only exists once the confirmation
+        // sheet has already taken over the screen, so there is no field left to compete with.
         void Button(Transform parent, string label, float x, float y, Color fill,
                     UnityEngine.Events.UnityAction onClick)
         {
-            var img = Ui.NewImage("Btn_" + label, parent);
-            img.color = fill;
-            Ui.Place(img.rectTransform, x, y, 460f, 80f);
+            var hit = Ui.ToyButton("Btn_" + label, parent, 460f, 80f, fill);
+            Ui.Place(hit.rectTransform, x, y, 460f, 80f);
 
-            var btn = img.gameObject.AddComponent<Button>();
-            btn.targetGraphic = img;
+            var btn = hit.gameObject.AddComponent<Button>();
+            btn.targetGraphic = hit;
             btn.onClick.AddListener(onClick);
 
-            var t = Ui.NewText("Text", img.transform, 32);
+            var t = Ui.NewText("Text", hit.transform, 32);
             if (t != null) { t.text = label; t.color = Color.white; Ui.Stretch(t.rectTransform); }
         }
     }
