@@ -51,19 +51,67 @@ def leggi_glb(percorso):
     return gt.leggi_glb(percorso)
 
 
+def _moltiplica(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
+
+
+def _matrice(nodo):
+    """La trasformazione di un nodo glTF, come matrice 4x4 per righe."""
+    if 'matrix' in nodo:                      # glTF la scrive per colonne
+        m = nodo['matrix']
+        return [[m[0], m[4], m[8], m[12]],
+                [m[1], m[5], m[9], m[13]],
+                [m[2], m[6], m[10], m[14]],
+                [m[3], m[7], m[11], m[15]]]
+    tx, ty, tz = nodo.get('translation', (0.0, 0.0, 0.0))
+    x, y, z, w = nodo.get('rotation', (0.0, 0.0, 0.0, 1.0))
+    sx, sy, sz = nodo.get('scale', (1.0, 1.0, 1.0))
+    r = [[1 - 2 * (y * y + z * z), 2 * (x * y - z * w),     2 * (x * z + y * w)],
+         [2 * (x * y + z * w),     1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+         [2 * (x * z - y * w),     2 * (y * z + x * w),     1 - 2 * (x * x + y * y)]]
+    s = (sx, sy, sz)
+    return [[r[i][j] * s[j] for j in range(3)] + [(tx, ty, tz)[i]] for i in range(3)] + \
+           [[0.0, 0.0, 0.0, 1.0]]
+
+
 def posizioni(percorso):
-    """Vertici in coordinate del modello. Onora byteStride: i file passati per meshoptimizer
-    interlacciano gli attributi, e leggerli a passo fisso 12 restituisce spazzatura."""
+    """Vertici nello spazio della SCENA, non del buffer.
+
+    Due trappole, entrambe gia' costate una misura sbagliata:
+
+      - `byteStride`: i file passati per meshoptimizer interlacciano gli attributi, e leggerli a
+        passo fisso 12 restituisce spazzatura;
+      - la trasformazione dei nodi. Meshy esporta la geometria con Z in alto e la raddrizza con
+        una rotazione di 90 gradi sul nodo radice. Unity e i visori la applicano, un lettore che
+        guarda solo il buffer no — e ottiene un'arena coricata su un fianco, con un "bordo
+        interno" che non esiste. Nessun errore, solo numeri plausibili e sbagliati.
+    """
     js, bi = leggi_glb(percorso)
+    ident = [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
     out = []
-    for mesh in js.get('meshes', []):
-        for prim in mesh['primitives']:
-            acc = js['accessors'][prim['attributes']['POSITION']]
-            vista = js['bufferViews'][acc['bufferView']]
-            passo = vista.get('byteStride') or 12
-            base = vista.get('byteOffset', 0) + acc.get('byteOffset', 0)
-            for i in range(acc['count']):
-                out.append(struct.unpack_from('<fff', bi, base + i * passo))
+
+    def cammina(indice, padre):
+        nodo = js['nodes'][indice]
+        qui = _moltiplica(padre, _matrice(nodo))
+        if 'mesh' in nodo:
+            for prim in js['meshes'][nodo['mesh']]['primitives']:
+                acc = js['accessors'][prim['attributes']['POSITION']]
+                vista = js['bufferViews'][acc['bufferView']]
+                passo = vista.get('byteStride') or 12
+                base = vista.get('byteOffset', 0) + acc.get('byteOffset', 0)
+                for i in range(acc['count']):
+                    x, y, z = struct.unpack_from('<fff', bi, base + i * passo)
+                    out.append(tuple(qui[r][0] * x + qui[r][1] * y + qui[r][2] * z + qui[r][3]
+                                     for r in range(3)))
+        for figlio in nodo.get('children', []):
+            cammina(figlio, qui)
+
+    scena = js.get('scenes', [{}])[js.get('scene', 0)]
+    radici = scena.get('nodes')
+    if radici is None:                      # nessuna scena dichiarata: prendi tutti i nodi
+        radici = range(len(js.get('nodes', [])))
+    for radice in radici:
+        cammina(radice, ident)
     return out
 
 
