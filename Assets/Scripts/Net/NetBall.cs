@@ -18,10 +18,13 @@ namespace KongBall
     public class NetBall : NetworkBehaviour, IStateAuthorityChanged
     {
         [Header("Ball")]
-        public float radius = 0.6f;
+        public float radius = 0.75f;
 
         [Header("Hit")]
-        public float hitImpulse = 10f;
+        // Halved-ish from the previous 10, in step with the lighter mass below (0.35 vs 0.6): impulse
+        // hits set VELOCITY, not force, so a lighter ball flies further from the same push unless the
+        // impulse comes down to match. This keeps the resulting shot speed roughly where it was.
+        public float hitImpulse = 5.8f;
         public float liftRatio = 0.32f;
         public float spinRatio = 0.5f;
         [Tooltip("Authority-side validation range, on top of whatever range the asking NetPlayer " +
@@ -103,7 +106,7 @@ namespace KongBall
             {
                 _ballCol.sharedMaterial = new PhysicsMaterial("BallPhys")
                 {
-                    bounciness = 0.35f,
+                    bounciness = 0.65f,
                     dynamicFriction = 0.4f,
                     staticFriction = 0.4f,
                     frictionCombine = PhysicsMaterialCombine.Average,
@@ -135,7 +138,7 @@ namespace KongBall
             if (!HasStateAuthority || _rb == null) return;
 
             // Held perfectly still outside PLAYING. Without this, ResetToCentre placed it and then
-            // let go: gravity and its own bounce physics (bounciness 0.35) were free to drift and
+            // let go: gravity and its own bounce physics were free to drift and
             // bounce it for the whole 2s GoalPause + 3s Countdown, so "the same starting point" was
             // actually "wherever it happened to settle that time" — a few centimetres of difference
             // every single kickoff. Zeroing velocity every tick holds it in place without going
