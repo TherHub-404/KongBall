@@ -24,45 +24,45 @@ namespace KongBall
         public float jumpBufferTime = 0.12f;
 
         [Header("Hit (ACTION on the ball)")]
-        [Tooltip("How close the ball has to be for ACTION to hit it instead of pushing/grabbing an " +
-                 "opponent. When both are in range at once, the ball always wins.")]
+        [Tooltip("How close the ball has to be for ACTION to hit it. Out of this range, ACTION does " +
+                 "nothing on the ground — the only way to affect anything else is the spin attack.")]
         public float hitRange = 1.6f;
         [Tooltip("Anti-spam only, not a real gameplay throttle: just long enough that one press can't " +
-                 "register twice on the same or an adjacent tick. The real cooldown that matters for " +
-                 "pace is push/grab's, below.")]
+                 "register twice on the same or an adjacent tick.")]
         public float hitCooldown = 0.15f;
 
-        [Header("Push / Grab (ACTION without ball in range)")]
+        [Header("Spin attack (JUMP while already airborne)")]
+        [Tooltip("Replaces push/grab entirely: with the ball never possessed, this is now the only way " +
+                 "to affect an opponent, and the strong way to hit the ball. One per jump — landing " +
+                 "resets it, so it can't be chained in the air.")]
+        public float spinLungeSpeed = 9f;
+        public float spinDuration = 0.35f;
+        public float spinHitRange = 1.8f;
+        public float spinBallPowerMultiplier = 1.6f;
+        public float spinCooldown = 1f;
+
+        [Header("Knockback (dealt by the spin attack)")]
         public float pushRange = 1.7f;
         public float pushRadius = 1.3f;
         public float pushForce = 11f;
         public float stunDuration = 0.9f;
-        public float pushCooldown = 5f;
-        public float holdThreshold = 0.3f;   // hold longer than this = GRAB (else = push)
-        public float grabDuration = 1.5f;    // max grab hold
-        public float grabCooldown = 5f;      // same pace as push, its own independent timer
-        public float grabMoveMultiplier = 0.4f; // grabber can still shuffle slowly while holding
 
         [Networked] public int NetTeam { get; set; }        // 0 = Blue, 1 = Red
         [Networked] public bool TeamAssigned { get; set; }  // false until the master hands out a side
         [Networked] public bool IsBot { get; set; }         // simulated by the master, no client behind it
         [Networked] TickTimer StumbleUntil { get; set; }    // knocked-back / no control window
-        [Networked] TickTimer HeldUntil { get; set; }       // grabbed / rooted in place
-        [Networked] TickTimer GrabbingUntil { get; set; }   // I am actively grabbing someone
+        [Networked] TickTimer SpinUntil { get; set; }       // mid-spin-attack, for remote presentation
         [Networked] public int KickSeq { get; set; }        // bumps on each hit (drives hit anim on all clients)
 
         // Presentation read-only helpers.
         public bool IsStumbled => Runner != null && !StumbleUntil.ExpiredOrNotRunning(Runner);
-        public bool IsHeld => Runner != null && !HeldUntil.ExpiredOrNotRunning(Runner);
-        public bool IsGrabbing => Runner != null && !GrabbingUntil.ExpiredOrNotRunning(Runner);
+        public bool IsSpinning => Runner != null && !SpinUntil.ExpiredOrNotRunning(Runner);
 
         TickTimer _hitCd;
-        TickTimer _pushCd;
-        TickTimer _grabCd;
-        TickTimer _grabLock;   // grabber is rooted while holding a victim
-        NetPlayer _grabTarget;
-        float _actionHeldTime;
-        bool _grabFired;
+        TickTimer _spinCd;
+        bool _usedSpin;       // one spin attack per jump; clears on landing
+        float _spinFor;       // >0 while the current spin's active hit window is open
+        Vector3 _spinDir;
         int _lastKickoffSeq = -1;
 
         // Every player currently in the match, humans and bots alike. The ball used to find players
@@ -81,16 +81,12 @@ namespace KongBall
         // Set next to _input below, the same "this is the human, not the brain" branch.
         public static NetPlayer Local { get; private set; }
 
-        // Presentation reads for the action button: which word it should say, and how full the
-        // cooldown ring around it should be. THE BALL IS NEVER POSSESSED, so this is a range check,
-        // not "do I have it" — see HandleBall, which uses the identical check to decide hit vs push.
+        // Presentation reads for the action button: whether ACTION currently does anything, and how
+        // full the cooldown ring around it should be. THE BALL IS NEVER POSSESSED, so this is a range
+        // check, not "do I have it" — see HandleBall, which uses the identical check.
         public bool BallInHitRange => Ball != null && Vector3.Distance(transform.position, Ball.transform.position) <= hitRange;
         public float HitCooldown01 => Runner != null
             ? Mathf.Clamp01((_hitCd.RemainingTime(Runner) ?? 0f) / Mathf.Max(0.0001f, hitCooldown)) : 0f;
-        public float PushCooldown01 => Runner != null
-            ? Mathf.Clamp01((_pushCd.RemainingTime(Runner) ?? 0f) / Mathf.Max(0.0001f, pushCooldown)) : 0f;
-        public float GrabCooldown01 => Runner != null
-            ? Mathf.Clamp01((_grabCd.RemainingTime(Runner) ?? 0f) / Mathf.Max(0.0001f, grabCooldown)) : 0f;
 
         CharacterController _cc;
         LocalInputSource _input;    // the human's joystick; null on a bot
@@ -294,17 +290,11 @@ namespace KongBall
             }
 
             bool stumbled = IsStumbled;
-            bool held = IsHeld;
 
-            // Grab ends on button release or when it times out.
-            if (_grabTarget != null && (_grabLock.ExpiredOrNotRunning(Runner) || !want.Action)) EndGrab();
-            bool grabbing = !_grabLock.ExpiredOrNotRunning(Runner);
-
-            // Stumbled / held (victim) = fully rooted. Grabbing (grabber) can still shuffle slowly.
-            if (stumbled || held)
+            // Stumbled (knocked back by a spin attack) = fully rooted, decelerating.
+            if (stumbled)
             {
-                if (stumbled) _horizVel = Vector3.MoveTowards(_horizVel, Vector3.zero, deceleration * dt);
-                else _horizVel = Vector3.zero;
+                _horizVel = Vector3.MoveTowards(_horizVel, Vector3.zero, deceleration * dt);
                 if (_grounded && _vY < 0f) _vY = -2f; else _vY += gravity * (_vY < 0f ? fallMultiplier : 1f) * dt;
                 var flagsF = _cc.Move((_horizVel + Vector3.up * _vY) * dt);
                 _grounded = (flagsF & CollisionFlags.Below) != 0 || _cc.isGrounded;
@@ -312,12 +302,13 @@ namespace KongBall
                 return;
             }
 
-            // --- Normal control (reduced speed while grabbing) ---
-            float spd = grabbing ? moveSpeed * grabMoveMultiplier : moveSpeed;
+            if (_grounded) _usedSpin = false; // landed: the next jump gets a fresh spin attack
+
+            // --- Normal control ---
             Vector3 mdir = want.Move;
 
             float inMag = Mathf.Clamp01(mdir.magnitude);
-            Vector3 wish = (inMag > 0.15f ? mdir.normalized : Vector3.zero) * spd * inMag;
+            Vector3 wish = (inMag > 0.15f ? mdir.normalized : Vector3.zero) * moveSpeed * inMag;
             float rate = (wish.sqrMagnitude > _horizVel.sqrMagnitude ? acceleration : deceleration) * (_grounded ? 1f : airControl);
             _horizVel = Vector3.MoveTowards(_horizVel, wish, rate * dt);
 
@@ -327,11 +318,21 @@ namespace KongBall
                 transform.rotation = Quaternion.RotateTowards(transform.rotation, target, turnSpeed * dt);
             }
 
-            // No jumping while grabbing.
-            if (!grabbing && ConsumeJump()) _jumpBuf = jumpBufferTime;
+            // Jump, or — if already airborne and the one spin attack for this jump hasn't fired yet —
+            // a spin attack instead. Same button, contextual on ground state rather than on a timer.
+            bool jumpPressed = ConsumeJump();
+            if (jumpPressed) _jumpBuf = jumpBufferTime;
             _jumpBuf -= dt;
             _coyote = _grounded ? coyoteTime : _coyote - dt;
-            if (!grabbing && _jumpBuf > 0f && _coyote > 0f) { _vY = jumpVelocity; _jumpBuf = 0f; _coyote = 0f; _grounded = false; }
+            bool canGroundJump = _jumpBuf > 0f && _coyote > 0f;
+            if (canGroundJump)
+            {
+                _vY = jumpVelocity; _jumpBuf = 0f; _coyote = 0f; _grounded = false;
+            }
+            else if (jumpPressed && !_grounded && !_usedSpin && _spinCd.ExpiredOrNotRunning(Runner))
+            {
+                StartSpin();
+            }
 
             if (_grounded && _vY < 0f) _vY = -2f;
             else _vY += gravity * (_vY < 0f ? fallMultiplier : 1f) * dt;
@@ -340,8 +341,7 @@ namespace KongBall
             CollisionFlags flags = _cc.Move(motion);
             _grounded = (flags & CollisionFlags.Below) != 0 || _cc.isGrounded;
 
-            // While grabbing, don't process hit/push/new-grab; just keep the action edge in sync.
-            if (grabbing) _prevAction = want.Action;
+            if (_spinFor > 0f) ResolveSpin(dt);
             else HandleBall(want);
         }
 
@@ -377,82 +377,82 @@ namespace KongBall
             return _input != null && _input.ConsumeJump();
         }
 
-        // Contextual ACTION. THE BALL IS NEVER POSSESSED: if it is close enough, ACTION hits it —
-        // always, even with an opponent also in range, per CORE_GAMEPLAY_RESET section 10-11. Only
-        // when the ball is out of reach does ACTION fall back to push/grab on a player.
+        // Contextual ACTION, and it is now a SMALL contract: the ball is never possessed, so ACTION
+        // hits it when it's close enough, and otherwise does nothing on the ground at all. Affecting
+        // an opponent — or hitting the ball harder — is the spin attack's job now, not ACTION's.
         void HandleBall(PlayerIntent want)
         {
             bool action = want.Action;
             bool ballClose = Ball != null && Vector3.Distance(transform.position, Ball.transform.position) <= hitRange;
 
-            if (ballClose)
+            if (ballClose && action && !_prevAction && _hitCd.ExpiredOrNotRunning(Runner))
             {
-                // Instantaneous, on the PRESS edge rather than on release: there is no carry window
-                // left to hold the button through while aiming. Direction comes from where the player
-                // is already heading, falling back to facing when standing still — the same principle
-                // push already uses below.
-                if (action && !_prevAction && _hitCd.ExpiredOrNotRunning(Runner))
-                {
-                    Vector3 dir = want.Move.sqrMagnitude > 0.01f ? want.Move.normalized : FlatForward();
-                    Hit(dir);
-                    _hitCd = TickTimer.CreateFromSeconds(Runner, hitCooldown);
-                }
-                // Never let a hit's press also arm a grab/push the instant the ball rolls away.
-                _actionHeldTime = 0f;
-                _grabFired = false;
-            }
-            else
-            {
-                // No ball in range: HOLD = GRAB, quick TAP = PUSH.
-                if (action) _actionHeldTime += Runner.DeltaTime; else _actionHeldTime = 0f;
-
-                if (action && !_grabFired && _actionHeldTime >= holdThreshold && _grabCd.ExpiredOrNotRunning(Runner))
-                {
-                    var target = FindTargetInFront();
-                    if (target != null)
-                    {
-                        target.RPC_Grab(grabDuration);
-                        _grabTarget = target;
-                        _grabLock = TickTimer.CreateFromSeconds(Runner, grabDuration);
-                        GrabbingUntil = TickTimer.CreateFromSeconds(Runner, grabDuration);
-                        _grabFired = true;
-                        _grabCd = TickTimer.CreateFromSeconds(Runner, grabCooldown);
-                    }
-                }
-                if (!action && _prevAction && !_grabFired && _pushCd.ExpiredOrNotRunning(Runner))
-                {
-                    var target = FindTargetInFront();
-                    if (target != null)
-                    {
-                        Vector3 dir = target.transform.position - transform.position; dir.y = 0f;
-                        target.RPC_Push(dir, pushForce);
-                        _pushCd = TickTimer.CreateFromSeconds(Runner, pushCooldown);
-                    }
-                }
-                if (!action) _grabFired = false;
+                Vector3 dir = want.Move.sqrMagnitude > 0.01f ? want.Move.normalized : FlatForward();
+                Hit(dir, 1f);
+                _hitCd = TickTimer.CreateFromSeconds(Runner, hitCooldown);
             }
 
             _prevAction = action;
         }
 
+        // One jump attack, one shot: lunges forward in the current heading and stays "live" for
+        // spinDuration, during which the first thing it touches — ball or opponent — resolves it.
+        // Direction is taken once, at launch, exactly like a real jump-kick would commit to a line
+        // rather than steering mid-air.
+        void StartSpin()
+        {
+            _usedSpin = true;
+            _spinFor = spinDuration;
+            _spinCd = TickTimer.CreateFromSeconds(Runner, spinCooldown);
+            SpinUntil = TickTimer.CreateFromSeconds(Runner, spinDuration);
+            _spinDir = _horizVel.sqrMagnitude > 0.1f ? new Vector3(_horizVel.x, 0f, _horizVel.z).normalized : FlatForward();
+            _horizVel = _spinDir * spinLungeSpeed;
+        }
+
+        // Checked every tick the spin is live. Ball beats opponent if somehow both are in range on
+        // the same tick — same priority ACTION already gives the ball everywhere else.
+        void ResolveSpin(float dt)
+        {
+            _spinFor -= dt;
+
+            var ball = Ball;
+            if (ball != null && Vector3.Distance(transform.position, ball.transform.position) <= spinHitRange)
+            {
+                Hit(_spinDir, spinBallPowerMultiplier);
+                _spinFor = 0f;
+                return;
+            }
+
+            var target = FindTargetInFront();
+            if (target != null)
+            {
+                Vector3 dir = target.transform.position - transform.position; dir.y = 0f;
+                target.RPC_Push(dir, pushForce);
+                _spinFor = 0f;
+            }
+        }
+
         // The impulse is applied by the ball's authority; the animation and SFX fire here immediately
-        // (KickSeq is on MY object, so that write is authoritative and instant).
+        // (KickSeq is on MY object, so that write is authoritative and instant). powerMultiplier is
+        // 1 for a normal ACTION hit, higher for a spin attack that connects — same fundamental path,
+        // never a second ball-physics system for the "harder" version.
         //
         // Two ways to reach the same authority-side method. A remote player has to ask over the wire;
         // whoever is ALREADY the ball's authority — every bot, since bots exist only on the master —
         // calls it directly, because an RPC to oneself is a message with nothing to carry, and
         // RPC_Hit resolves the SENDER, which for a bot would resolve to the master's own avatar.
-        void Hit(Vector3 dir)
+        void Hit(Vector3 dir, float powerMultiplier)
         {
             var ball = Ball;
             if (ball == null) return;
 
-            if (ball.Object != null && ball.Object.HasStateAuthority) ball.Hit(this, dir);
-            else ball.RPC_Hit(dir);
+            if (ball.Object != null && ball.Object.HasStateAuthority) ball.Hit(this, dir, powerMultiplier);
+            else ball.RPC_Hit(dir, powerMultiplier);
 
             KickSeq++; // triggers the hit animation on all clients
         }
 
+        // Also the spin attack's opponent target — same "must be in front" query pushing used.
         NetPlayer FindTargetInFront()
         {
             Vector3 center = transform.position + transform.forward * (pushRange * 0.5f);
@@ -468,13 +468,6 @@ namespace KongBall
                 if (d < bestD) { bestD = d; best = np; }
             }
             return best;
-        }
-
-        void EndGrab()
-        {
-            _grabLock = default;
-            GrabbingUntil = default;
-            if (_grabTarget != null) { _grabTarget.RPC_Release(); _grabTarget = null; }
         }
 
         // The physical bump: a CharacterController does not push a Rigidbody just by colliding with
@@ -530,6 +523,7 @@ namespace KongBall
             if (_cc != null) _cc.enabled = true;
             _horizVel = Vector3.zero; _vY = 0f;
             _grounded = false;   // let the next tick re-detect it instead of assuming the old value
+            _usedSpin = false; _spinFor = 0f;
             StumbleUntil = default;
         }
 
@@ -544,7 +538,8 @@ namespace KongBall
             ResetToSpawn();
         }
 
-        // Executed on the TARGET's authority: apply knockback + stumble to itself.
+        // Executed on the TARGET's authority: apply knockback + stumble to itself. Now only reached
+        // from a landed spin attack — there is no more tap-push to also call it.
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
         public void RPC_Push(Vector3 dir, float force)
         {
@@ -553,20 +548,6 @@ namespace KongBall
             _horizVel = dir * force;
             if (_vY < 2f) _vY = 2f; // small pop
             StumbleUntil = TickTimer.CreateFromSeconds(Runner, stunDuration);
-        }
-
-        // Executed on the TARGET's authority: grabbed = rooted in place.
-        [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-        public void RPC_Grab(float dur)
-        {
-            _horizVel = Vector3.zero;
-            HeldUntil = TickTimer.CreateFromSeconds(Runner, dur);
-        }
-
-        [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-        public void RPC_Release()
-        {
-            HeldUntil = default;
         }
     }
 }

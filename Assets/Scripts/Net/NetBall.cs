@@ -208,17 +208,20 @@ namespace KongBall
         // on someone's behalf. A bot has no client and sends no RPC — it calls Hit directly, because
         // bots exist only on the master, which already IS the ball's authority.
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-        public void RPC_Hit(Vector3 dir, RpcInfo info = default)
+        public void RPC_Hit(Vector3 dir, float powerMultiplier, RpcInfo info = default)
         {
             if (Runner == null) return;
             if (!Runner.TryGetPlayerObject(info.Source, out var no) || no == null) return;
-            Hit(no.GetComponent<NetPlayer>(), dir);
+            Hit(no.GetComponent<NetPlayer>(), dir, powerMultiplier);
         }
 
         // Authority side. There is no ownership to check any more — instead the authority re-checks
         // distance itself with its own replicated positions, rather than trusting whatever the asking
         // client believed on its own (possibly stale, by network latency) view of the world.
-        public void Hit(NetPlayer who, Vector3 dir)
+        // powerMultiplier is 1 for a normal ACTION hit, higher for a spin attack that connects — one
+        // impulse path for both, per CORE_GAMEPLAY_RESET section 12 ("do not create a second ball
+        // physics system for the harder version").
+        public void Hit(NetPlayer who, Vector3 dir, float powerMultiplier = 1f)
         {
             if (!HasStateAuthority || who == null) return;
             if (FlatDist(who.transform.position, _rb.position) > hitValidationRange) return;
@@ -227,12 +230,13 @@ namespace KongBall
             if (dir.sqrMagnitude < 1e-4f) return;
             dir.Normalize();
 
+            float impulse = hitImpulse * Mathf.Max(0.1f, powerMultiplier);
             bool aerial = _rb.position.y > radius + 0.6f;
             float lift = aerial ? liftRatio * 2.2f : liftRatio;
             _rb.linearVelocity = Vector3.zero;
             _rb.angularVelocity = Vector3.zero;
-            _rb.AddForce(dir * hitImpulse + Vector3.up * hitImpulse * lift, ForceMode.Impulse);
-            _rb.AddTorque(Vector3.Cross(Vector3.up, dir) * hitImpulse * spinRatio, ForceMode.Impulse);
+            _rb.AddForce(dir * impulse + Vector3.up * impulse * lift, ForceMode.Impulse);
+            _rb.AddTorque(Vector3.Cross(Vector3.up, dir) * impulse * spinRatio, ForceMode.Impulse);
 
             LastHitterId = who.NetId;
             HitSeq++; // the cosmetic pop, on every client, at the same replicated instant

@@ -76,14 +76,13 @@ namespace KongBall
             }
 
             // THE BALL IS NEVER POSSESSED: this is the same range check HandleBall uses to decide
-            // hit vs push, read here only for what the button should say.
+            // whether ACTION does anything at all. Away from the ball, ACTION is a no-op now —
+            // affecting an opponent is the jump+jump spin attack's job, which this button doesn't
+            // represent (JUMP already has its own button per KONGBALL_UI_VISUAL_BIBLE #19).
             bool hitReady = p.BallInHitRange;
-            if (_label != null) _label.text = hitReady ? "KICK" : "PUSH";
+            if (_label != null) _label.text = hitReady ? "KICK" : "";
 
-            // PUSH and GRAB are the same tap-vs-hold gesture and now each carry their own cooldown;
-            // the ring shows whichever is more restrictive so it never promises an action that would
-            // actually still be on cooldown.
-            float frac = hitReady ? p.HitCooldown01 : Mathf.Max(p.PushCooldown01, p.GrabCooldown01);
+            float frac = hitReady ? p.HitCooldown01 : 0f;
             if (_cooldownRing != null)
             {
                 _cooldownRing.enabled = frac > 0.001f;
