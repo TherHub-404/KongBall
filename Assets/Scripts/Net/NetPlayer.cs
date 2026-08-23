@@ -547,11 +547,18 @@ namespace KongBall
         {
             bool blue = NetTeam == 0;
             float x = blue ? -6f : 6f;
-            // Spread along the goal line so team mates do not start inside one another. A bot has no
-            // PlayerRef to be spread by — every bot in the room answers to the master's — so its own
-            // network id does the job instead.
-            int id = _brain != null ? (int)(Object.Id.Raw % 3u) : Object.StateAuthority.PlayerId;
-            float z = ((id % 3) - 1) * 3f;
+            // A fixed home slot for the whole match: how many team mates have a lower NetworkId than
+            // me, among those already assigned a side. This used to be PlayerId % 3 (or NetworkId % 3
+            // for a bot) — a hash, not a slot — so two team mates could land on the same z, and which
+            // number the room happened to hand out decided where "the third spot" was. Counting rank
+            // instead is unique by construction: no two team mates can ever share it, and it means
+            // the same thing every kickoff for as long as the roster doesn't change.
+            int slot = 0;
+            foreach (var np in Live)
+                if (np != null && np != this && np.TeamAssigned && np.NetTeam == NetTeam
+                    && np.Object != null && Object != null && np.Object.Id.Raw < Object.Id.Raw)
+                    slot++;
+            float z = (slot - 1) * 3f;
             Vector3 pos = new Vector3(x, SpawnHeight, z);
             Quaternion rot = Quaternion.LookRotation(blue ? Vector3.right : Vector3.left, Vector3.up);
             if (_cc != null) _cc.enabled = false;
