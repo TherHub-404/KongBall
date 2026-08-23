@@ -28,12 +28,19 @@ namespace KongBall
     // `.github/scripts/arena_bordo.py Assets/Models/Arena.glb` prints this whole block.
     public static class Arena
     {
+        // Where the model lives. Loaded from Resources and instantiated at runtime rather than
+        // referenced from the scene: a .glb's sub-assets get their file IDs from the names inside
+        // it, and a regenerated model has different names. Pointing the scene at "mesh id
+        // 115682196741775011" worked exactly until the arena was retextured, at which point the
+        // reference would have gone dead in silence and the arena would simply not be drawn.
+        public const string ModelPath = "Arena/Arena";
+
         // --- The model, and where it sits ---------------------------------------------------------
         // Uniform on purpose. The model spent months in the scene at (28, 3, 28) — non-uniform,
         // squashing a 15 m arena into a 1.15 m pancake, which is why it had been written off.
         public const float ModelScale = 41f;
         // Lifts the model's GROUND PLANE to y = 0. Not its lowest vertex, which sits 0.4 m lower.
-        public const float ModelY = 7.4f;
+        public const float ModelY = 7.51f;
         // The interior is not centred on the model's origin: one stand comes several metres further
         // in than the others. Shifting the model is what lets the pitch stay centred on the origin,
         // which everything else in the game assumes.
@@ -46,8 +53,8 @@ namespace KongBall
         // by construction rather than by luck.
         static readonly float[] Quadrant =
         {
-            26.48f, 26.56f, 26.83f, 26.13f, 26.13f, 26.13f, 27.16f, 26.72f, 24.97f, 24.40f,
-            24.10f, 23.61f, 23.61f, 23.30f, 22.95f, 22.65f, 22.19f, 22.11f, 22.11f,
+            26.39f, 26.43f, 26.61f, 26.09f, 26.09f, 26.12f, 27.27f, 27.01f, 25.26f, 24.66f,
+            24.37f, 23.88f, 23.40f, 23.01f, 22.66f, 22.36f, 21.90f, 21.83f, 21.83f,
         };
 
         public static readonly float HalfX = Quadrant[0];                    // to the goal line
