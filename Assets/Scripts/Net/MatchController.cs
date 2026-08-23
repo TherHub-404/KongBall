@@ -36,6 +36,7 @@ namespace KongBall
         [Networked] public float MatchTime { get; set; }   // match time remaining
         [Networked] public int Winner { get; set; }        // -1 none, 0 blue, 1 red, 2 draw
         [Networked] public int KickoffSeq { get; set; }    // bumps each kickoff -> players reset
+        [Networked] public NetworkId LastScorerId { get; set; } // who to zoom on during GoalPause
         [Networked] public int Seats { get; set; }         // players this match waits for, bots included
         [Networked] public bool ByForfeit { get; set; }    // the win was awarded, not played out
         [Networked] public bool WithBots { get; set; }     // this match was SET UP with bots on the pitch
@@ -57,7 +58,7 @@ namespace KongBall
 
         // Called by the ball's authority (coordinate goal detection) -> runs on the master.
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-        public void RPC_Goal(int team) { RegisterGoal(team); }
+        public void RPC_Goal(int team, NetworkId scorerId) { RegisterGoal(team, scorerId); }
 
         public override void Spawned()
         {
@@ -243,11 +244,12 @@ namespace KongBall
         // --- scoring -----------------------------------------------------------------------------
 
         // Called by the ball's authority when the ball crosses a goal line.
-        public void RegisterGoal(int scoringTeam)
+        public void RegisterGoal(int scoringTeam, NetworkId scorerId)
         {
             if (!HasStateAuthority) return;
             if ((Phase)PhaseId != Phase.Playing) return; // goal lock outside PLAYING
             if (scoringTeam == 0) ScoreBlue++; else ScoreRed++;
+            LastScorerId = scorerId; // read by MatchCamera on every client during GoalPause
             // The ball recentres itself the moment it detects the goal (NetBall.ScoreGoal), so it
             // cannot re-trigger while we switch phase — nothing to reset from here.
 

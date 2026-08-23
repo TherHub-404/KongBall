@@ -64,6 +64,13 @@ namespace KongBall
         Vector3 _dribbleVel;
         Collider _ballCol;
 
+        // Authority-only, not networked: Kick() and ScoreGoal() both run only on the master inside
+        // FixedUpdateNetwork, so a plain field is enough to carry "who kicked it" the few ticks from
+        // shot to goal-line. Read by MatchController.RegisterGoal to drive the celebration camera —
+        // an own goal (last touch belongs to the team that concedes) will point it at the wrong
+        // player; the game does not distinguish that case anywhere else either.
+        NetworkId _lastKicker;
+
         // Presentation-only prediction state (never networked, never read by simulation).
         Transform _visual;
         // A generated model does not always have its pivot at the centre of the mesh: this ball's
@@ -260,8 +267,8 @@ namespace KongBall
         // migration, when the two objects can momentarily sit on different peers.
         void ScoreGoal(MatchController mc, int team)
         {
-            if (mc.Object != null && mc.Object.HasStateAuthority) mc.RegisterGoal(team);
-            else mc.RPC_Goal(team);
+            if (mc.Object != null && mc.Object.HasStateAuthority) mc.RegisterGoal(team, _lastKicker);
+            else mc.RPC_Goal(team, _lastKicker);
             ResetToCentre();
         }
 
@@ -347,6 +354,7 @@ namespace KongBall
             if (!HasStateAuthority) return;
             if (who == null || !OwnerId.IsValid || OwnerId != who.NetId) return;   // not yours to kick
 
+            _lastKicker = who.NetId;
             dir.y = 0f;
             if (dir.sqrMagnitude < 1e-4f) return;
             dir.Normalize();

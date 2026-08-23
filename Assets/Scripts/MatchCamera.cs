@@ -1,3 +1,4 @@
+using Fusion;
 using UnityEngine;
 
 namespace KongBall
@@ -40,10 +41,16 @@ namespace KongBall
         public float pitchMax = 72f;
         public float pitchDefault = 34f;
 
+        [Header("Goal celebration zoom")]
+        [Tooltip("Not measured on a phone yet — tune once someone can actually see it score a goal.")]
+        public float goalZoomDistance = 4f;
+        public float goalZoomPitch = 20f;
+
         Transform _target;
         float _yaw, _pitch;          // target orbit angles (driven by drag)
         float _curYaw, _curPitch;    // smoothed angles actually applied
         LocalInputSource _input;     // the single local input source in the scene
+        NetPlayer _scorer;           // resolved once per GoalPause, cleared when it ends
 
         public void SetTarget(Transform player, Vector3 attackDir)
         {
@@ -59,29 +66,66 @@ namespace KongBall
         {
             if (_target == null) return;
 
+            var mc = MatchController.Instance;
+            bool wantZoom = mc != null && mc.CurPhase == MatchController.Phase.GoalPause;
+            if (wantZoom && _scorer == null) _scorer = FindByNetId(mc.LastScorerId);
+            if (!wantZoom) _scorer = null;
+            bool zooming = _scorer != null;
+
             if (_input == null) _input = UnityEngine.Object.FindAnyObjectByType<LocalInputSource>();
-            if (_input != null)
+            Vector2 look = _input != null ? _input.ConsumeLookDelta() : Vector2.zero;
+            // The celebration isn't steerable: input is still drained, just not applied, so a drag
+            // made during it doesn't all land on the camera the instant control comes back.
+            if (!zooming)
             {
-                Vector2 look = _input.ConsumeLookDelta();
                 _yaw += look.x * yawSensitivity;
                 _pitch = Mathf.Clamp(_pitch - look.y * pitchSensitivity, pitchMin, pitchMax);
             }
-            Apply(false);
+
+            Transform focusT = zooming ? _scorer.transform : _target;
+            float dist = zooming ? goalZoomDistance : backDistance;
+            float yawTarget = zooming ? FacingYaw(_scorer.transform) : _yaw;
+            float pitchTarget = zooming ? goalZoomPitch : _pitch;
+
+            Apply(false, focusT, dist, yawTarget, pitchTarget);
         }
 
-        void Apply(bool instant)
+        // Faces the scorer from the front, looking back at them as they celebrate — the opposite
+        // convention from SetTarget (which looks toward the enemy goal), since a player who just shot
+        // is typically still facing away from the camera the instant the goal registers.
+        static float FacingYaw(Transform scorer)
         {
-            if (instant) { _curYaw = _yaw; _curPitch = _pitch; }
+            Vector3 f = -scorer.forward; f.y = 0f;
+            if (f.sqrMagnitude < 1e-6f) f = Vector3.forward;
+            return Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
+        }
+
+        static NetPlayer FindByNetId(NetworkId id)
+        {
+            if (!id.IsValid) return null;
+            foreach (var np in NetPlayer.Live) if (np != null && np.NetId == id) return np;
+            return null;
+        }
+
+        void Apply(bool instant, Transform focusTransform = null, float dist = -1f,
+            float? yawOverride = null, float? pitchOverride = null)
+        {
+            if (focusTransform == null) focusTransform = _target;
+            float useDist = dist >= 0f ? dist : backDistance;
+            float useYaw = yawOverride ?? _yaw;
+            float usePitch = pitchOverride ?? _pitch;
+
+            if (instant) { _curYaw = useYaw; _curPitch = usePitch; }
             else
             {
                 float k = 1f - Mathf.Exp(-rotationLerp * Time.deltaTime);
-                _curYaw = Mathf.LerpAngle(_curYaw, _yaw, k);
-                _curPitch = Mathf.Lerp(_curPitch, _pitch, k);
+                _curYaw = Mathf.LerpAngle(_curYaw, useYaw, k);
+                _curPitch = Mathf.Lerp(_curPitch, usePitch, k);
             }
 
             Quaternion rot = Quaternion.Euler(_curPitch, _curYaw, 0f);
-            Vector3 focus = _target.position + Vector3.up * lookHeight;
-            Vector3 arm = -(rot * Vector3.forward) * backDistance;
+            Vector3 focus = focusTransform.position + Vector3.up * lookHeight;
+            Vector3 arm = -(rot * Vector3.forward) * useDist;
             Vector3 camPos = focus + arm * ArmFraction(focus, arm);
             // The arm has a floor, so with the player pressed against the wall and the camera
             // dragged straight outward the shortened arm can still poke through. Then, and only
