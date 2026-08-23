@@ -23,12 +23,21 @@ namespace KongBall
         public float coyoteTime = 0.12f;
         public float jumpBufferTime = 0.12f;
 
-        [Header("Push / Grab (ACTION without ball)")]
+        [Header("Hit (ACTION on the ball)")]
+        [Tooltip("How close the ball has to be for ACTION to hit it instead of pushing/grabbing an " +
+                 "opponent. When both are in range at once, the ball always wins.")]
+        public float hitRange = 1.6f;
+        [Tooltip("Anti-spam only, not a real gameplay throttle: just long enough that one press can't " +
+                 "register twice on the same or an adjacent tick. The real cooldown that matters for " +
+                 "pace is push/grab's, below.")]
+        public float hitCooldown = 0.15f;
+
+        [Header("Push / Grab (ACTION without ball in range)")]
         public float pushRange = 1.7f;
         public float pushRadius = 1.3f;
         public float pushForce = 11f;
         public float stunDuration = 0.9f;
-        public float pushCooldown = 0.6f;
+        public float pushCooldown = 5f;
         public float holdThreshold = 0.3f;   // hold longer than this = GRAB (else = push)
         public float grabDuration = 1.5f;    // max grab hold
         public float grabMoveMultiplier = 0.4f; // grabber can still shuffle slowly while holding
@@ -39,13 +48,14 @@ namespace KongBall
         [Networked] TickTimer StumbleUntil { get; set; }    // knocked-back / no control window
         [Networked] TickTimer HeldUntil { get; set; }       // grabbed / rooted in place
         [Networked] TickTimer GrabbingUntil { get; set; }   // I am actively grabbing someone
-        [Networked] public int KickSeq { get; set; }        // bumps on each kick (drives kick anim on all clients)
+        [Networked] public int KickSeq { get; set; }        // bumps on each hit (drives hit anim on all clients)
 
         // Presentation read-only helpers.
         public bool IsStumbled => Runner != null && !StumbleUntil.ExpiredOrNotRunning(Runner);
         public bool IsHeld => Runner != null && !HeldUntil.ExpiredOrNotRunning(Runner);
         public bool IsGrabbing => Runner != null && !GrabbingUntil.ExpiredOrNotRunning(Runner);
 
+        TickTimer _hitCd;
         TickTimer _pushCd;
         TickTimer _grabLock;   // grabber is rooted while holding a victim
         NetPlayer _grabTarget;
@@ -55,13 +65,13 @@ namespace KongBall
 
         // Every player currently in the match, humans and bots alike. The ball used to find players
         // through Runner.ActivePlayers, which by definition only knows about people with a
-        // connection: a bot would have been invisible to possession. One list, one rule, everybody.
+        // connection: a bot would have been invisible to it. One list, one rule, everybody.
         public static readonly List<NetPlayer> Live = new List<NetPlayer>();
 
-        // Identity as the BALL sees it: the player object, not the person. Used instead of PlayerRef
-        // so that something without a PlayerRef can still carry the ball. NetworkId is the type
-        // Fusion provides for exactly this — "the unique identifier for a network entity" — and it
-        // cannot be confused with any other number the way a raw int can.
+        // Identity as other systems see it: the player OBJECT, not the person. NetworkId rather than
+        // a raw int: it is the type Fusion documents as "the unique identifier for a network entity",
+        // it carries its own serialisation, and it will not silently compare equal to some other
+        // number.
         public NetworkId NetId => Object != null ? Object.Id : default;
 
         CharacterController _cc;
@@ -75,11 +85,8 @@ namespace KongBall
         static NetBall Ball => NetBall.Instance;
         Collider _ballCol;
         bool _ballIgnored;
-        float _kickIgnoreUntil;
         bool _prevAction;
         bool _camReady;
-        Vector2 _lastAim;
-        LineRenderer _aimLine;
         NameTag _tag;          // debug label over bots; temporary, see UpdateNameTag
         int _tagOrdinal = -1;
 
@@ -145,11 +152,7 @@ namespace KongBall
             if (st && !_wasStumbled && SfxManager.Instance != null) SfxManager.Instance.PlayImpact();
             _wasStumbled = st;
 
-            if (HasStateAuthority && _brain == null)
-            {
-                if (!_camReady) SetupCamera();
-                UpdateAimLine();
-            }
+            if (HasStateAuthority && _brain == null && !_camReady) SetupCamera();
         }
 
         // DEBUG, and asked for as such: bots wear their name while their behaviour is being judged.
@@ -185,73 +188,16 @@ namespace KongBall
             return n;
         }
 
-        // Team-coloured ground ring under every player; brightens/pulses for the ball owner.
+        // Team-coloured ground ring under every player. It used to brighten/pulse for whoever carried
+        // the ball; there is no carrier any more, so it is a plain team colour now — see the PR for
+        // what, if anything, should replace it as feedback for "the ball is in MY hit range".
         void UpdateRing()
         {
             if (_ring == null) return;
-            bool mine = Ball != null && Ball.OwnerId == NetId;
-            Color team = (NetTeam == 1) ? RedColor : BlueColor;
-            Color c = team;
-            if (mine)
-            {
-                float p = 0.5f + 0.5f * Mathf.Sin(Time.time * 9f);
-                c = Color.Lerp(team, Color.white, 0.55f + 0.35f * p);
-            }
-            _ring.material.color = c;
+            _ring.material.color = (NetTeam == 1) ? RedColor : BlueColor;
         }
-
-        // Ground aim preview while holding the kick button with the ball (local only).
-        void UpdateAimLine()
-        {
-            if (_input == null || Ball == null) { HideAim(); return; }
-            bool mine = Ball.OwnerId == NetId;
-            if (!(mine && _input.GetActionHeld())) { HideAim(); return; }
-
-            Vector2 d = _input.GetAimDelta();
-            float refPx = Mathf.Max(1f, Screen.height * 0.22f);
-            float deadPx = Screen.height * 0.04f;
-            Vector3 dir; float power;
-            if (d.magnitude > deadPx && _cam != null)
-            {
-                Vector3 f = _cam.forward; f.y = 0f; if (f.sqrMagnitude > 1e-6f) f.Normalize();
-                Vector3 r = _cam.right; r.y = 0f; if (r.sqrMagnitude > 1e-6f) r.Normalize();
-                dir = r * d.x + f * d.y; dir.y = 0f;
-                dir = dir.sqrMagnitude > 1e-6f ? dir.normalized : FlatForward();
-                power = Mathf.Clamp01(d.magnitude / refPx);
-            }
-            else { dir = FlatForward(); power = 0f; }
-            power = Mathf.Clamp(power, 0.15f, 1f);
-
-            EnsureAimLine();
-            Vector3 p0 = Ball.VisualPosition; p0.y = 0.12f;   // line up with the ball we can SEE
-            Vector3 p1 = p0 + dir * Mathf.Lerp(1.5f, 6.5f, power);
-            _aimLine.enabled = true;
-            _aimLine.SetPosition(0, p0);
-            _aimLine.SetPosition(1, p1);
-            Color c = Color.Lerp(new Color(0.4f, 1f, 0.45f), new Color(1f, 0.4f, 0.2f), power);
-            _aimLine.startColor = c; _aimLine.endColor = c;
-        }
-
-        void HideAim() { if (_aimLine != null) _aimLine.enabled = false; }
 
         Vector3 FlatForward() { Vector3 f = transform.forward; f.y = 0f; return f.sqrMagnitude > 1e-6f ? f.normalized : Vector3.forward; }
-
-        void EnsureAimLine()
-        {
-            if (_aimLine != null) return;
-            var go = new GameObject("NetAimLine");
-            _aimLine = go.AddComponent<LineRenderer>();
-            var sh = Shader.Find("Universal Render Pipeline/Unlit");
-            if (sh == null) sh = Shader.Find("Sprites/Default");
-            _aimLine.material = new Material(sh);
-            _aimLine.widthMultiplier = 0.28f;
-            _aimLine.numCapVertices = 4;
-            _aimLine.positionCount = 2;
-            _aimLine.textureMode = LineTextureMode.Stretch;
-            _aimLine.alignment = LineAlignment.View;
-            _aimLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            _aimLine.enabled = false;
-        }
 
         void SetupCamera()
         {
@@ -295,7 +241,7 @@ namespace KongBall
                 return;
             }
 
-            UpdateBallIgnore(); // per-client: the ball ignores ME only while I carry it (+kick grace)
+            UpdateBallIgnore(); // per-client, once: the ball never body-blocks a player's approach
 
             // One read per tick, one shape, whoever produced it. Everything below this line is the
             // same code for a person and for a bot.
@@ -364,7 +310,7 @@ namespace KongBall
             CollisionFlags flags = _cc.Move(motion);
             _grounded = (flags & CollisionFlags.Below) != 0 || _cc.isGrounded;
 
-            // While grabbing, don't process kick/new-grab; just keep action edge in sync.
+            // While grabbing, don't process hit/push/new-grab; just keep the action edge in sync.
             if (grabbing) _prevAction = want.Action;
             else HandleBall(want);
         }
@@ -391,29 +337,6 @@ namespace KongBall
             else want.Move = new Vector3(mv.x, 0f, mv.y);
 
             want.Action = _input.GetActionHeld();
-
-            // The kick this tick would produce, from the drag remembered while the button was down.
-            // Resolved BEFORE the drag is updated, because a kick fires on the RELEASE tick — by
-            // which time the finger has gone and GetAimDelta reads zero.
-            if (_lastAim.sqrMagnitude > 100f && _cam != null)
-            {
-                Vector3 f = _cam.forward; f.y = 0f; f.Normalize();
-                Vector3 r = _cam.right; r.y = 0f; r.Normalize();
-                want.KickDir = (r * _lastAim.x + f * _lastAim.y).normalized;
-            }
-            else want.KickDir = Vector3.zero;   // straight ahead
-
-            float power = 0.5f;
-            if (_lastAim.sqrMagnitude > 1f) power = Mathf.Clamp01(_lastAim.magnitude / (Screen.height * 0.22f));
-            want.KickPower = Mathf.Max(power, 0.35f);
-
-            if (want.Action)
-            {
-                Vector2 aim = _input.GetAimDelta();
-                if (aim.sqrMagnitude > 1f) _lastAim = aim;
-            }
-            else _lastAim = Vector2.zero;
-
             return want;
         }
 
@@ -424,25 +347,33 @@ namespace KongBall
             return _input != null && _input.ConsumeJump();
         }
 
-        // Contextual ACTION: with ball = KICK (aim then release), without ball = PUSH / GRAB.
+        // Contextual ACTION. THE BALL IS NEVER POSSESSED: if it is close enough, ACTION hits it —
+        // always, even with an opponent also in range, per CORE_GAMEPLAY_RESET section 10-11. Only
+        // when the ball is out of reach does ACTION fall back to push/grab on a player.
         void HandleBall(PlayerIntent want)
         {
             bool action = want.Action;
+            bool ballClose = Ball != null && Vector3.Distance(transform.position, Ball.transform.position) <= hitRange;
 
-            // Possession is NOT claimed from here. The ball's authority decides it by proximity
-            // (NetBall.UpdatePossession) and we simply read the result — no client ever writes ball
-            // state, which is what makes possession impossible to desync.
-            bool mine = Ball != null && Ball.OwnerId == NetId;
-
-            if (mine)
+            if (ballClose)
             {
-                // Kick on RELEASE, toward the direction the intent named (zero = straight ahead).
-                if (!action && _prevAction)
-                    Shoot(want.KickDir.sqrMagnitude > 1e-4f ? want.KickDir : transform.forward, want.KickPower);
+                // Instantaneous, on the PRESS edge rather than on release: there is no carry window
+                // left to hold the button through while aiming. Direction comes from where the player
+                // is already heading, falling back to facing when standing still — the same principle
+                // push already uses below.
+                if (action && !_prevAction && _hitCd.ExpiredOrNotRunning(Runner))
+                {
+                    Vector3 dir = want.Move.sqrMagnitude > 0.01f ? want.Move.normalized : FlatForward();
+                    Hit(dir);
+                    _hitCd = TickTimer.CreateFromSeconds(Runner, hitCooldown);
+                }
+                // Never let a hit's press also arm a grab/push the instant the ball rolls away.
+                _actionHeldTime = 0f;
+                _grabFired = false;
             }
             else
             {
-                // No ball: HOLD = GRAB, quick TAP = PUSH.
+                // No ball in range: HOLD = GRAB, quick TAP = PUSH.
                 if (action) _actionHeldTime += Runner.DeltaTime; else _actionHeldTime = 0f;
 
                 if (action && !_grabFired && _actionHeldTime >= holdThreshold)
@@ -476,22 +407,19 @@ namespace KongBall
         // The impulse is applied by the ball's authority; the animation and SFX fire here immediately
         // (KickSeq is on MY object, so that write is authoritative and instant).
         //
-        // Two ways to reach the same authority-side method. A remote carrier has to ask over the wire
-        // and predicts the mesh leaving its foot so the shot does not wait a round trip; whoever is
-        // ALREADY the ball's authority — which is every bot, since bots exist only on the master —
-        // calls it directly, because an RPC to oneself is a message with nothing to carry and
-        // RPC_Kick resolves the SENDER, which for a bot would resolve to the master's own avatar.
-        void Shoot(Vector3 dir, float power01)
+        // Two ways to reach the same authority-side method. A remote player has to ask over the wire;
+        // whoever is ALREADY the ball's authority — every bot, since bots exist only on the master —
+        // calls it directly, because an RPC to oneself is a message with nothing to carry, and
+        // RPC_Hit resolves the SENDER, which for a bot would resolve to the master's own avatar.
+        void Hit(Vector3 dir)
         {
             var ball = Ball;
             if (ball == null) return;
-            power01 = Mathf.Clamp01(power01);
 
-            if (ball.Object != null && ball.Object.HasStateAuthority) ball.Kick(this, dir, power01);
-            else { ball.RPC_Kick(dir, power01); ball.NotifyLocalKick(); }
+            if (ball.Object != null && ball.Object.HasStateAuthority) ball.Hit(this, dir);
+            else ball.RPC_Hit(dir);
 
-            KickSeq++; // triggers the kick animation on all clients
-            _kickIgnoreUntil = Time.time + 0.5f; // let the kicked ball escape my body
+            KickSeq++; // triggers the hit animation on all clients
         }
 
         NetPlayer FindTargetInFront()
@@ -518,12 +446,12 @@ namespace KongBall
             if (_grabTarget != null) { _grabTarget.RPC_Release(); _grabTarget = null; }
         }
 
-        // The ball ignores the LOCAL player's body. Reason: on a non-owner's client the ball is a
-        // kinematic NetworkTransform proxy, so a moving CharacterController gets blocked by it (the
-        // ball acts like a little wall) — which stopped the approaching player from ever reaching
-        // claim range ("only one player can attach" bug). Possession is proximity-based; defense is
-        // via push/grab/steal, not body-blocking. Owner dribble/back-kick needed this ignore anyway.
-        // Registered once, the first tick both colliders exist.
+        // The ball ignores every player's body, always — not just whoever "has" it, because nobody
+        // does any more. Reason: on a non-authority client the ball is a kinematic NetworkTransform
+        // proxy, so a moving CharacterController gets blocked by it (the ball acts like a little
+        // wall), which would stop a player ever reaching hit range in the first place. The hit itself
+        // is a gameplay-authored interaction (NetBall.Hit), not raw collision, by design — see
+        // CORE_GAMEPLAY_RESET section 09. Registered once, the first tick both colliders exist.
         void UpdateBallIgnore()
         {
             if (_ballIgnored || _cc == null) return;
@@ -548,11 +476,9 @@ namespace KongBall
             bool blue = NetTeam == 0;
             float x = blue ? -6f : 6f;
             // A fixed home slot for the whole match: how many team mates have a lower NetworkId than
-            // me, among those already assigned a side. This used to be PlayerId % 3 (or NetworkId % 3
-            // for a bot) — a hash, not a slot — so two team mates could land on the same z, and which
-            // number the room happened to hand out decided where "the third spot" was. Counting rank
-            // instead is unique by construction: no two team mates can ever share it, and it means
-            // the same thing every kickoff for as long as the roster doesn't change.
+            // me, among those already assigned a side. Counting rank is unique by construction: no
+            // two team mates can ever share a slot, and it means the same thing every kickoff for as
+            // long as the roster doesn't change.
             int slot = 0;
             foreach (var np in Live)
                 if (np != null && np != this && np.TeamAssigned && np.NetTeam == NetTeam
@@ -591,7 +517,7 @@ namespace KongBall
             StumbleUntil = TickTimer.CreateFromSeconds(Runner, stunDuration);
         }
 
-        // Executed on the TARGET's authority: grabbed = rooted in place (and drops the ball).
+        // Executed on the TARGET's authority: grabbed = rooted in place.
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
         public void RPC_Grab(float dur)
         {

@@ -5,8 +5,8 @@ namespace KongBall
     // What a player wants to do this tick, in world space, whoever wanted it.
     //
     // It exists so that NetPlayer has exactly ONE consumer of intent and never asks where the values
-    // came from. Everything below this struct — acceleration, turning, possession, push, grab, kick —
-    // is therefore shared by construction, which is the only way a bot can be held to the same rules
+    // came from. Everything below this struct — acceleration, turning, ball hits, push, grab — is
+    // therefore shared by construction, which is the only way a bot can be held to the same rules
     // as a person. If a bot ever needs a value a human cannot produce, the design is wrong.
     public struct PlayerIntent
     {
@@ -15,13 +15,13 @@ namespace KongBall
         // none and names a world direction outright.
         public Vector3 Move;
 
-        // The one contextual button: kick while carrying the ball, push or grab while not.
+        // The one contextual button: hit the ball when it is in range, push or grab an opponent
+        // otherwise. THE BALL IS NEVER POSSESSED — there is no "release to shoot" any more, a hit
+        // fires the instant Action goes from released to pressed while the ball is close. Direction
+        // and power are no longer part of the intent: NetPlayer reads them off Move/facing and a
+        // fixed constant, because there is no carry window left in which to aim one (CORE_GAMEPLAY_
+        // RESET section 07).
         public bool Action;
-
-        // Where a kick goes when Action is RELEASED while carrying, and how hard. A zero direction
-        // means "straight ahead". Read only on the release tick, ignored otherwise.
-        public Vector3 KickDir;
-        public float KickPower;   // 0..1
     }
 
     // Something that plays without a person behind it. This interface is the one name the rest of the
