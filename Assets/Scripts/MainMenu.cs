@@ -28,11 +28,12 @@ namespace KongBall
         const float LogoWidth = 440f;
         const float LogoTopGap = 18f;
 
-        // Tuned against MenuStage.Background, which is a strong yellow: mint on yellow was unreadable.
-        static readonly Color Ink = new Color(0.10f, 0.15f, 0.09f);
-        static readonly Color Primary = new Color(0.10f, 0.40f, 0.23f);
-        static readonly Color Secondary = new Color(0.30f, 0.25f, 0.11f);
-        static readonly Color Field = new Color(1f, 0.98f, 0.92f);
+        // The shared KONGBALL_UI_VISUAL_BIBLE palette (Ui.cs) — no more one-off tints per screen.
+        // Warn has no equivalent there (the bible names no error colour) and stays local on purpose.
+        static readonly Color Ink = Ui.Ink;
+        static readonly Color Primary = Ui.JungleGreen;
+        static readonly Color Secondary = Ui.WoodBrown;
+        static readonly Color Field = Ui.Cream;
         static readonly Color Warn = new Color(0.60f, 0.14f, 0.08f);
 
         static MainMenu _current;
@@ -367,30 +368,31 @@ namespace KongBall
             return go;
         }
 
+        // Toy-shaped per KONGBALL_UI_VISUAL_BIBLE: thick outline, a depth edge under the surface, a
+        // lighter top highlight — instead of the flat coloured rectangle this used to be. ToyButton
+        // returns the invisible full-size hit target; everything that actually draws is a child of it.
         void Button(Transform parent, string label, float x, float y, Color fill, Color ink,
                     UnityEngine.Events.UnityAction onClick, float width = 520f, float height = 88f,
                     bool fromBottom = false)
         {
-            var img = Ui.NewImage("Btn_" + label, parent);
-            img.color = fill;
-            if (fromBottom) Ui.PlaceFromBottom(img.rectTransform, x, y, width, height);
-            else Ui.Place(img.rectTransform, x, y, width, height);
+            var hit = Ui.ToyButton("Btn_" + label, parent, width, height, fill);
+            if (fromBottom) Ui.PlaceFromBottom(hit.rectTransform, x, y, width, height);
+            else Ui.Place(hit.rectTransform, x, y, width, height);
 
-            var btn = img.gameObject.AddComponent<Button>();
-            btn.targetGraphic = img;
+            var btn = hit.gameObject.AddComponent<Button>();
+            btn.targetGraphic = hit;
             btn.onClick.AddListener(onClick);
 
-            var t = Ui.NewText("Text", img.transform, 34);
+            var t = Ui.NewText("Text", hit.transform, 34);
             if (t != null) { t.text = label; t.color = ink; Ui.Stretch(t.rectTransform); }
         }
 
         InputField NewInput(string name, Transform parent, float x, float y, float width)
         {
-            var img = Ui.NewImage(name, parent);
-            img.color = Field;
-            Ui.Place(img.rectTransform, x, y, width, 76f);
+            var panel = Ui.Panel(name, parent, width, 76f, Field);
+            Ui.Place(panel.rectTransform, x, y, width, 76f);
 
-            var text = Ui.NewText("Text", img.transform, 40);
+            var text = Ui.NewText("Text", panel.transform, 40);
             if (text == null) return null;
             text.supportRichText = false;
             text.color = Ink;
@@ -400,7 +402,7 @@ namespace KongBall
             trt.offsetMin = new Vector2(16f, 0f);
             trt.offsetMax = new Vector2(-16f, 0f);
 
-            var placeholder = Ui.NewText("Placeholder", img.transform, 36);
+            var placeholder = Ui.NewText("Placeholder", panel.transform, 36);
             if (placeholder != null)
             {
                 placeholder.text = "CODICE";
@@ -408,8 +410,8 @@ namespace KongBall
                 Ui.Stretch(placeholder.rectTransform);
             }
 
-            var input = img.gameObject.AddComponent<InputField>();
-            input.targetGraphic = img;
+            var input = panel.gameObject.AddComponent<InputField>();
+            input.targetGraphic = panel;
             input.textComponent = text;
             if (placeholder != null) input.placeholder = placeholder;
             input.characterLimit = CodeLength;

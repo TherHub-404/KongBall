@@ -14,7 +14,9 @@ namespace KongBall
     {
         const int SortingOrder = 5000;
         static readonly Color Backdrop = new Color(0.05f, 0.07f, 0.06f, 0.92f);
-        static readonly Color Accent = new Color(0.35f, 0.85f, 0.65f);
+        // The bible's energy colour, not a one-off mint tint: a loading/connecting screen is exactly
+        // where "communicate energy" (KONGBALL_UI_VISUAL_BIBLE #02) matters most.
+        static readonly Color Accent = Ui.Yellow;
 
         Text _label;
         Image[] _dots;
@@ -78,17 +80,12 @@ namespace KongBall
             foreach (var d in _dots) if (d != null) d.enabled = false;
             if (_retry != null) Destroy(_retry);
 
-            _retry = new GameObject("Retry", typeof(RectTransform));
-            _retry.transform.SetParent(transform, false);
-            var img = _retry.AddComponent<Image>();
-            img.color = Accent;
-            var rt = img.rectTransform;
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(320f, 96f);
-            rt.anchoredPosition = new Vector2(0f, -90f);
+            var hit = Ui.ToyButton("Retry", transform, 320f, 96f, Accent);
+            _retry = hit.gameObject;
+            Ui.Place(hit.rectTransform, 0f, -90f, 320f, 96f);
 
             var btn = _retry.AddComponent<Button>();
-            btn.targetGraphic = img;
+            btn.targetGraphic = hit;
             btn.onClick.AddListener(() => { Destroy(gameObject); onRetry?.Invoke(); });
 
             var t = Ui.NewText("Text", _retry.transform, 36);
