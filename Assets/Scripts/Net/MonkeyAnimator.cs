@@ -24,6 +24,10 @@ namespace KongBall
         public float kickWhip = 40f;       // degrees
         public float tumbleRate = 520f;    // deg/sec while stumbled
 
+        [Header("Spin attack")]
+        public float spinRollRate = 900f;  // deg/sec while a spin attack is live
+        public float spinDive = 24f;       // forward pitch, degrees
+
         [Header("Smoothing")]
         public float smooth = 16f;
 
@@ -31,7 +35,7 @@ namespace KongBall
         Transform _t;
         Vector3 _baseScale, _baseLocalPos;
         Vector3 _lastPos;
-        float _bob, _tumble, _kickTimer;
+        float _bob, _tumble, _kickTimer, _spinRoll;
         int _lastKickSeq;
 
         void Awake()
@@ -56,9 +60,9 @@ namespace KongBall
             float vSpeed = vel.y;
             float run01 = Mathf.Clamp01(hSpeed / runRefSpeed);
             bool stumbled = _player != null && _player.IsStumbled;
-            bool held = _player != null && _player.IsHeld;
-            bool grabbing = _player != null && _player.IsGrabbing;
+            bool spinning = _player != null && _player.IsSpinning;
             bool airborne = Mathf.Abs(vSpeed) > airThreshold;
+            if (!spinning) _spinRoll = 0f; // fresh roll every time a new spin attack starts
 
             if (_player != null && _player.KickSeq != _lastKickSeq) { _lastKickSeq = _player.KickSeq; _kickTimer = kickTime; }
 
@@ -71,22 +75,14 @@ namespace KongBall
                 _tumble += tumbleRate * dt;
                 targetRot = Quaternion.Euler(_tumble, 0f, 22f); // roll over
             }
-            else if (held)
+            else if (spinning)
             {
-                // Grabbed victim: squashed + struggling shake.
+                // Jump + jump: a diving barrel-roll along the lunge. Rate-based rather than tied to
+                // the attack's exact remaining time, so it doesn't need to know the countdown — it
+                // just spins fast for as long as IsSpinning says the attack is still live.
                 _tumble = 0f;
-                float shake = Mathf.Sin(Time.time * 30f) * 9f;
-                targetRot = Quaternion.Euler(0f, 0f, shake);
-                targetScale = new Vector3(_baseScale.x * 1.12f, _baseScale.y * 0.82f, _baseScale.z * 1.12f);
-                targetPos = _baseLocalPos + new Vector3(0f, 0.05f, 0f);
-            }
-            else if (grabbing)
-            {
-                // Grabber: leaning forward, arms-out reaching, small effort bob.
-                _tumble = 0f;
-                float b = Mathf.Sin(Time.time * 12f) * 0.04f;
-                targetRot = Quaternion.Euler(28f, 0f, 0f);
-                targetPos = _baseLocalPos + new Vector3(0f, b, 0f);
+                _spinRoll += spinRollRate * dt;
+                targetRot = Quaternion.Euler(spinDive, 0f, _spinRoll);
             }
             else if (airborne)
             {
@@ -116,7 +112,10 @@ namespace KongBall
             float a = 1f - Mathf.Exp(-smooth * dt);
             _t.localScale = Vector3.Lerp(_t.localScale, targetScale, a);
             _t.localPosition = Vector3.Lerp(_t.localPosition, targetPos, a);
-            _t.localRotation = stumbled ? targetRot : Quaternion.Slerp(_t.localRotation, targetRot, a);
+            // Stumbled and spinning both drive an already-fast, already-continuous rotation of their
+            // own (tumbleRate, spinRollRate) — smoothing on top of that would just lag behind it and
+            // blur the rate that was actually chosen, the same reason stumbled already skipped it.
+            _t.localRotation = (stumbled || spinning) ? targetRot : Quaternion.Slerp(_t.localRotation, targetRot, a);
         }
     }
 }
