@@ -42,11 +42,23 @@ namespace KongBall
         // hardcoded "|z| > 16" twenty lines down — so when the pitch grew, the ball started
         // teleporting to the centre while it was still in play.
 
+        // Bumps on every landed Hit — cosmetic only, drives a brief impact pop on the visual mesh so
+        // a hit reads as a hit even before the impulse has visibly moved the ball. Presentation reacts
+        // to the counter, never a value, for the same reason KickSeq does on NetPlayer.
+        [Networked] public int HitSeq { get; set; }
+
+        // Who last hit it, for whichever presentation wants to know who to credit a goal to (the
+        // camera zoom, currently) — resolved fresh on every Hit, read by nobody inside this class.
+        [Networked] public NetworkId LastHitterId { get; set; }
+
         // Single shared ball per session — resolved once instead of searched every frame.
         public static NetBall Instance { get; private set; }
 
         Rigidbody _rb;
         Collider _ballCol;
+        int _seenHitSeq = -1;
+        float _hitPulse;          // 0..1, decays after a hit — purely cosmetic scale pop
+        Vector3 _visualBaseScale = Vector3.one;
 
         // A generated model does not always have its pivot at the centre of the mesh: this ball's
         // origin sits on its underside. WireArtModels compensates with a local offset on the Visual,
@@ -80,7 +92,11 @@ namespace KongBall
 
             _rb = GetComponent<Rigidbody>();
             _visual = transform.Find("Visual");
-            if (_visual != null) _visualBaseLocal = _visual.localPosition;   // centring authored by WireArtModels
+            if (_visual != null)
+            {
+                _visualBaseLocal = _visual.localPosition;   // centring authored by WireArtModels
+                _visualBaseScale = _visual.localScale;
+            }
 
             _ballCol = GetComponent<Collider>();
             if (_ballCol != null && _ballCol.sharedMaterial == null)
@@ -118,6 +134,21 @@ namespace KongBall
             SyncKinematic();
             if (!HasStateAuthority || _rb == null) return;
 
+            // Held perfectly still outside PLAYING. Without this, ResetToCentre placed it and then
+            // let go: gravity and its own bounce physics (bounciness 0.35) were free to drift and
+            // bounce it for the whole 2s GoalPause + 3s Countdown, so "the same starting point" was
+            // actually "wherever it happened to settle that time" — a few centimetres of difference
+            // every single kickoff. Zeroing velocity every tick holds it in place without going
+            // kinematic, so it still falls the same short, consistent distance the instant PLAYING
+            // begins rather than snapping.
+            var mc = MatchController.Instance;
+            if (mc == null || mc.CurPhase != MatchController.Phase.Playing)
+            {
+                _rb.linearVelocity = Vector3.zero;
+                _rb.angularVelocity = Vector3.zero;
+                return;
+            }
+
             // Out-of-bounds safety net. The slack is deliberate: the wall already keeps the ball
             // in, so getting here means physics tunnelled through it. Resetting the instant the
             // ball touches the touchline would instead punish a legal ball resting against the wall.
@@ -125,17 +156,14 @@ namespace KongBall
             if (bp.y < -3f || !Arena.Contains(bp, 2f)) { ResetToCentre(); return; }
 
             // GOAL detection by coordinate (robust — the ball is trapped in the goal pocket, so no
-            // physics-trigger tunnelling; the authority has the true position). Runs every tick now
-            // that the ball is never "held" by someone — there is no carried state to exempt it from.
-            var mc = MatchController.Instance;
-            if (mc != null && mc.CanScore)
+            // physics-trigger tunnelling; the authority has the true position). mc.CanScore is
+            // guaranteed true here — it means exactly "Playing", which the freeze check above already
+            // confirmed — so there is nothing left to gate on.
+            Vector3 fp = _rb.position;
+            if (Mathf.Abs(fp.z) < Arena.GoalHalfZ && fp.y < Arena.GoalHeight)
             {
-                Vector3 fp = _rb.position;
-                if (Mathf.Abs(fp.z) < Arena.GoalHalfZ && fp.y < Arena.GoalHeight)
-                {
-                    if (fp.x > Arena.GoalLineX) { ScoreGoal(mc, 0); return; }   // Blue scores (+x)
-                    if (fp.x < -Arena.GoalLineX) { ScoreGoal(mc, 1); return; }  // Red scores (-x)
-                }
+                if (fp.x > Arena.GoalLineX) { ScoreGoal(mc, 0); return; }   // Blue scores (+x)
+                if (fp.x < -Arena.GoalLineX) { ScoreGoal(mc, 1); return; }  // Red scores (-x)
             }
 
             // Unity physics + the real walls handle roll / bounce / arc / rest.
@@ -149,6 +177,13 @@ namespace KongBall
         {
             if (_visual == null) return;
             _visual.position = transform.position + CentringOffset;
+
+            // Impact pop: purely cosmetic, every client, driven by the replicated counter rather than
+            // by simulating the hit locally — it must read the same instant on every screen a hit is
+            // visible on, not whenever that client happens to also be the one who threw the punch.
+            if (HitSeq != _seenHitSeq) { _seenHitSeq = HitSeq; _hitPulse = 1f; }
+            _hitPulse = Mathf.MoveTowards(_hitPulse, 0f, Time.deltaTime * 6f);
+            _visual.localScale = _visualBaseScale * (1f + _hitPulse * 0.18f);
         }
 
         // Ball and MatchController are both spawned by — and simulated on — the master, so this is
@@ -156,8 +191,8 @@ namespace KongBall
         // migration, when the two objects can momentarily sit on different peers.
         void ScoreGoal(MatchController mc, int team)
         {
-            if (mc.Object != null && mc.Object.HasStateAuthority) mc.RegisterGoal(team);
-            else mc.RPC_Goal(team);
+            if (mc.Object != null && mc.Object.HasStateAuthority) mc.RegisterGoal(team, LastHitterId);
+            else mc.RPC_Goal(team, LastHitterId);
             ResetToCentre();
         }
 
@@ -198,6 +233,9 @@ namespace KongBall
             _rb.angularVelocity = Vector3.zero;
             _rb.AddForce(dir * hitImpulse + Vector3.up * hitImpulse * lift, ForceMode.Impulse);
             _rb.AddTorque(Vector3.Cross(Vector3.up, dir) * hitImpulse * spinRatio, ForceMode.Impulse);
+
+            LastHitterId = who.NetId;
+            HitSeq++; // the cosmetic pop, on every client, at the same replicated instant
         }
 
         // --- Bump ------------------------------------------------------------------------------
@@ -206,17 +244,24 @@ namespace KongBall
         // it instead of passing through — the deliberate ACTION hit stays the strong, precise one.
 
         [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-        public void RPC_Bump(Vector3 horizVel)
+        public void RPC_Bump(Vector3 horizVel, float dt)
         {
-            Bump(horizVel);
+            Bump(horizVel, dt);
         }
 
-        public void Bump(Vector3 horizVel)
+        // ForceMode.Force needs reapplying every PHYSICS fixed step to have its full effect, but this
+        // is only ever called once per Fusion network tick (from OnControllerColliderHit, itself
+        // fired once per FixedUpdateNetwork) — and Fusion's tick rate and Unity's own physics fixed
+        // step are two different clocks that do not line up. Force was therefore being dropped
+        // between mismatched steps, which is why the ball felt far heavier than bumpForceMultiplier
+        // implied. VelocityChange scaled by this tick's own delta time sidesteps the mismatch
+        // entirely: it is a direct, one-shot velocity nudge that does not need reapplying to land.
+        public void Bump(Vector3 horizVel, float dt)
         {
             if (!HasStateAuthority || _rb == null) return;
             horizVel.y = 0f;
             if (horizVel.sqrMagnitude < 0.01f) return;
-            _rb.AddForce(horizVel * bumpForceMultiplier, ForceMode.Force);
+            _rb.AddForce(horizVel * bumpForceMultiplier * dt, ForceMode.VelocityChange);
         }
 
         public void KickoffReset()
