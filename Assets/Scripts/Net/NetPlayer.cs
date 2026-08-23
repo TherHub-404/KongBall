@@ -74,6 +74,20 @@ namespace KongBall
         // number.
         public NetworkId NetId => Object != null ? Object.Id : default;
 
+        // The local human's own avatar, for the on-screen action button to read from — it needs to
+        // know whether the BALL I'm near is in MY hit range, not any NetPlayer it happens to find.
+        // Set next to _input below, the same "this is the human, not the brain" branch.
+        public static NetPlayer Local { get; private set; }
+
+        // Presentation reads for the action button: which word it should say, and how full the
+        // cooldown ring around it should be. THE BALL IS NEVER POSSESSED, so this is a range check,
+        // not "do I have it" — see HandleBall, which uses the identical check to decide hit vs push.
+        public bool BallInHitRange => Ball != null && Vector3.Distance(transform.position, Ball.transform.position) <= hitRange;
+        public float HitCooldown01 => Runner != null
+            ? Mathf.Clamp01((_hitCd.RemainingTime(Runner) ?? 0f) / Mathf.Max(0.0001f, hitCooldown)) : 0f;
+        public float PushCooldown01 => Runner != null
+            ? Mathf.Clamp01((_pushCd.RemainingTime(Runner) ?? 0f) / Mathf.Max(0.0001f, pushCooldown)) : 0f;
+
         CharacterController _cc;
         LocalInputSource _input;    // the human's joystick; null on a bot
         IPlayerBrain _brain;        // the bot's brain; null on a human
@@ -121,6 +135,7 @@ namespace KongBall
                 {
                     _input = UnityEngine.Object.FindAnyObjectByType<LocalInputSource>();
                     if (Camera.main != null) _cam = Camera.main.transform;
+                    Local = this;
                 }
             }
         }
@@ -128,6 +143,7 @@ namespace KongBall
         public override void Despawned(NetworkRunner runner, bool hasState)
         {
             Live.Remove(this);
+            if (Local == this) Local = null;
         }
 
         // The list is static and this game leaves a match and starts another without reloading the
@@ -136,6 +152,7 @@ namespace KongBall
         void OnDestroy()
         {
             Live.Remove(this);
+            if (Local == this) Local = null;
         }
 
         // Keep the colour in sync on remote clients once the networked team value arrives.

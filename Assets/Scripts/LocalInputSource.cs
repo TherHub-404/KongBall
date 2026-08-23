@@ -13,7 +13,6 @@ namespace KongBall
 
         Vector2 _touchMove;
         bool _touchActionHeld;
-        Vector2 _aimDelta;
         Vector2 _lookDelta;   // camera-orbit drag (consumed by MatchCamera each frame)
         bool _jumpQueued;     // edge-triggered, consumed by the player controller
 
@@ -54,8 +53,6 @@ namespace KongBall
             _touchMove = v;
         }
         public void SetTouchActionHeld(bool held) { _touchActionHeld = held; }
-        public void SetAimDelta(Vector2 d) { _aimDelta = d; }
-        public Vector2 GetAimDelta() => _aimDelta;
 
         // camera-orbit look: accumulate drag, camera consumes each frame
         public void AddLookDelta(Vector2 d) { _lookDelta += d; }
