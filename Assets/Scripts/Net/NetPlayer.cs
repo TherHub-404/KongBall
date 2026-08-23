@@ -165,8 +165,21 @@ namespace KongBall
             UpdateRing();
             UpdateNameTag();
 
-            // Feedback SFX (all clients observe networked state).
-            if (KickSeq != _sfxKickSeq) { _sfxKickSeq = KickSeq; if (SfxManager.Instance != null) SfxManager.Instance.PlayKick(); }
+            // Feedback SFX + camera shake (every client observes the same networked counter, so a
+            // hit reads and feels the same on every screen it is visible from — not only on whoever
+            // threw it). Shake scales with proximity to THIS client's own camera: a hit across the
+            // pitch is a whisper, one at your feet is felt.
+            if (KickSeq != _sfxKickSeq)
+            {
+                _sfxKickSeq = KickSeq;
+                if (SfxManager.Instance != null) SfxManager.Instance.PlayKick();
+                var cam = Camera.main != null ? Camera.main.GetComponent<MatchCamera>() : null;
+                if (cam != null)
+                {
+                    float d = Vector3.Distance(transform.position, cam.transform.position);
+                    cam.Shake(Mathf.Clamp01(1f - d / 14f));
+                }
+            }
             bool st = IsStumbled;
             if (st && !_wasStumbled && SfxManager.Instance != null) SfxManager.Instance.PlayImpact();
             _wasStumbled = st;
@@ -474,15 +487,18 @@ namespace KongBall
         // into it" push.
         void OnControllerColliderHit(ControllerColliderHit hit)
         {
-            if (!HasStateAuthority) return;
+            if (!HasStateAuthority || Runner == null) return;
             var hitBall = hit.collider.GetComponentInParent<NetBall>();
             if (hitBall == null || hitBall != Ball) return;
 
             Vector3 vel = _horizVel;
             if (vel.sqrMagnitude < 0.01f) return;
 
-            if (hitBall.Object != null && hitBall.Object.HasStateAuthority) hitBall.Bump(vel);
-            else hitBall.RPC_Bump(vel);
+            // This tick's own delta time: Bump needs it to turn a velocity into a one-shot nudge that
+            // does not depend on how often this callback happens to fire (see NetBall.Bump).
+            float dt = Runner.DeltaTime;
+            if (hitBall.Object != null && hitBall.Object.HasStateAuthority) hitBall.Bump(vel, dt);
+            else hitBall.RPC_Bump(vel, dt);
         }
 
         // Teleport back to the team's kickoff spot (called on a new kickoff, and by the out-of-bounds

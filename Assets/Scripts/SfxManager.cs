@@ -25,9 +25,13 @@ namespace KongBall
             _goal = MakeGoal();
         }
 
-        public void PlayKick() { if (_kick != null) _src.PlayOneShot(_kick, 0.9f); }
-        public void PlayImpact() { if (_impact != null) _src.PlayOneShot(_impact, 0.85f); }
-        public void PlayGoal() { if (_goal != null) _src.PlayOneShot(_goal, 1f); }
+        // A little pitch variance per play so a hit repeated ten times in a row doesn't read as the
+        // same sample looping — cheap, and one of the first things that makes a sound feel alive.
+        public void PlayKick() { Vary(); if (_kick != null) _src.PlayOneShot(_kick, 0.9f); }
+        public void PlayImpact() { Vary(); if (_impact != null) _src.PlayOneShot(_impact, 0.85f); }
+        public void PlayGoal() { Vary(); if (_goal != null) _src.PlayOneShot(_goal, 1f); }
+
+        void Vary() { _src.pitch = Random.Range(0.94f, 1.08f); }
 
         // punchy low thump with a downward pitch sweep
         AudioClip MakeKick()
