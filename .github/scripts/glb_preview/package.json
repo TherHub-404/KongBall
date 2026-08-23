@@ -1,0 +1,13 @@
+{
+  "name": "glb-preview",
+  "private": true,
+  "type": "module",
+  "description": "Headless visual check for a .glb (scale, pose, animations) without opening the Unity Editor. See AGENTS.md #10/#20.",
+  "scripts": {
+    "preview": "node preview.mjs"
+  },
+  "dependencies": {
+    "puppeteer": "^23.0.0",
+    "three": "^0.169.0"
+  }
+}
