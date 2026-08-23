@@ -36,16 +36,18 @@ namespace KongBall
         public const string ModelPath = "Arena/Arena";
 
         // --- The model, and where it sits ---------------------------------------------------------
-        // Uniform on purpose. The model spent months in the scene at (28, 3, 28) — non-uniform,
-        // squashing a 15 m arena into a 1.15 m pancake, which is why it had been written off.
-        public const float ModelScale = 41f;
+        // The scale is not a taste call: it is the one that makes the playable area come out the
+        // same as the previous arena's, 1970 m2, so replacing the art did not quietly resize the
+        // pitch. Uniform, always — a predecessor sat in the scene at (28, 3, 28) for months,
+        // non-uniform, squashing a 15 m arena into a 1.15 m pancake, and got written off for it.
+        public const float ModelScale = 44.6f;
         // Lifts the model's GROUND PLANE to y = 0. Not its lowest vertex, which sits 0.4 m lower.
-        public const float ModelY = 7.51f;
+        public const float ModelY = 3.33f;
         // The interior is not centred on the model's origin: one stand comes several metres further
         // in than the others. Shifting the model is what lets the pitch stay centred on the origin,
         // which everything else in the game assumes.
-        public const float ModelX = 0f;
-        public const float ModelZ = -2.5f;
+        public const float ModelX = -1.07f;
+        public const float ModelZ = -3.21f;
 
         // --- The touchline ------------------------------------------------------------------------
         // One quadrant, from +x (index 0) round to +z (last index), every 5 degrees. The other three
@@ -53,8 +55,8 @@ namespace KongBall
         // by construction rather than by luck.
         static readonly float[] Quadrant =
         {
-            26.39f, 26.43f, 26.61f, 26.09f, 26.09f, 26.12f, 27.27f, 27.01f, 25.26f, 24.66f,
-            24.37f, 23.88f, 23.40f, 23.01f, 22.66f, 22.36f, 21.90f, 21.83f, 21.83f,
+            26.30f, 26.30f, 25.98f, 25.89f, 25.89f, 26.35f, 27.53f, 27.36f, 25.61f, 24.14f,
+            23.79f, 23.79f, 24.14f, 22.80f, 22.48f, 22.09f, 22.01f, 21.93f, 21.93f,
         };
 
         public static readonly float HalfX = Quadrant[0];                    // to the goal line
