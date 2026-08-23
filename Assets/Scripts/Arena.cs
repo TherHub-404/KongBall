@@ -22,8 +22,10 @@ namespace KongBall
     //  - a cap on how fast the radius may change, so the wall cannot turn a corner sharp enough to
     //    make a bounce look like a bug.
     //
-    // If Arena.glb is ever replaced this table is wrong and has to be measured again. The measuring
-    // is scripted: see the pull request that introduced it.
+    // If Arena.glb is ever replaced this table is wrong and has to be measured again, and the game
+    // will not tell you: the wall and the paint stay where they were, so the ball bounces off air
+    // and there is ground you can see and cannot walk on. The measuring is scripted —
+    // `.github/scripts/arena_bordo.py Assets/Models/Arena.glb` prints this whole block.
     public static class Arena
     {
         // --- The model, and where it sits ---------------------------------------------------------
@@ -31,7 +33,7 @@ namespace KongBall
         // squashing a 15 m arena into a 1.15 m pancake, which is why it had been written off.
         public const float ModelScale = 41f;
         // Lifts the model's GROUND PLANE to y = 0. Not its lowest vertex, which sits 0.4 m lower.
-        public const float ModelY = 7.34f;
+        public const float ModelY = 7.4f;
         // The interior is not centred on the model's origin: one stand comes several metres further
         // in than the others. Shifting the model is what lets the pitch stay centred on the origin,
         // which everything else in the game assumes.

@@ -518,4 +518,5 @@ Unity 6000.5.7f1, URP, **solo iOS**. Una sola scena; tutto il resto è costruito
 | `.github/scripts/asset_sanity.py` | integrità degli asset: `.meta`, GUID, nomi di `Resources.Load` |
 | `.github/scripts/repo_lint.py` | gli invarianti: segreti, AppId e timbro vuoti, flag dei prefab, shader |
 | `.github/scripts/glb_textures.py` | rimpicciolisce le texture dentro un `.glb` senza aprire Unity. Vedi la 20 |
+| `.github/scripts/arena_bordo.py` | misura il bordo interno dell'arena e stampa la tabella di `Arena.cs`. **Da rilanciare ogni volta che il modello dell'arena cambia** |
 | `Kongball_DOCS/` | le "bibbie" di design del gioco, scritte prima del codice |
