@@ -201,15 +201,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::KongBall.NetBall
   radius: 0.5
-  dribbleAhead: 1.3
-  dribbleSmoothTime: 0.06
-  possessionRadius: 1.5
-  loseDistance: 2.8
-  stealMargin: 0.25
-  kickMin: 6
-  kickMax: 15
+  hitImpulse: 10
   liftRatio: 0.32
   spinRatio: 0.5
+  hitValidationRange: 2.2
 --- !u!54 &1347889706783655097
 Rigidbody:
   m_ObjectHideFlags: 0

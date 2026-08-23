@@ -7,16 +7,20 @@ folder, next to the player contract it belongs to, so that this folder holds imp
 
 Written in English to match the code comments; the surrounding conversation is in Italian.
 
+> **CORE_GAMEPLAY_RESET note.** THE BALL IS NEVER POSSESSED any more — there is no carrier, no
+> dribble, no "release to shoot". `BotBrain` was rewritten alongside `NetPlayer`/`NetBall` for this;
+> most of this document changed with it. If you find a passage that still talks about a bot "carrying"
+> the ball, that passage is stale and should be fixed, not trusted.
+
 ## The seams
 
 The rest of the codebase was shaped so a bot needs no special case anywhere. Keep it that way.
 
 | seam | contract |
 |---|---|
-| `NetPlayer.Live` | every player in the match, humans and bots. The ball picks candidates from here, never from `Runner.ActivePlayers` — that list only knows about peers with a connection. |
-| `NetBall.OwnerId` | a `NetworkId` identifying the player **object**, not the person. This is what lets something with no `PlayerRef` carry the ball. Invalid means free. Resolve it with `Runner.TryFindObject`, which answers for anything spawned — `TryGetPlayerObject` by definition cannot. |
-| `NetBall.Kick(NetPlayer, dir, power)` | authority-side entry point. A remote carrier asks over `RPC_Kick`, which only resolves the sender; whoever already holds the ball's authority — every bot, since bots exist only on the master — calls it directly. Both go through `NetPlayer.Shoot`. |
-| `PlayerIntent` + `IPlayerBrain` | the four values a tick needs, in WORLD space. `NetPlayer.ReadIntent` returns either the joystick resolved against the camera, or `_brain.Think`. Everything below that line — acceleration, turning, possession, push, grab, kick — is shared by construction. |
+| `NetPlayer.Live` | every player in the match, humans and bots. Anything that needs to find players scans this, never `Runner.ActivePlayers` — that list only knows about peers with a connection. |
+| `NetBall.Hit(NetPlayer, dir)` | authority-side entry point. A remote player asks over `RPC_Hit`, which only resolves the sender; whoever already holds the ball's authority — every bot, since bots exist only on the master — calls it directly. Both go through `NetPlayer`'s private `Hit`. There is no ownership check any more: the authority re-validates distance itself instead. |
+| `PlayerIntent` + `IPlayerBrain` | the two values a tick needs, in WORLD space: a move direction and the one contextual button. `NetPlayer.ReadIntent` returns either the joystick resolved against the camera, or `_brain.Think`. Everything below that line — acceleration, turning, the hit-vs-push priority, push, grab — is shared by construction. |
 
 Plus two rules that are easy to get wrong.
 
@@ -37,16 +41,17 @@ and adds `BotBrain` — a plain `MonoBehaviour`, so nothing about the networked 
 `onBeforeSpawned` callback, which Fusion invokes before `Spawned` and which is therefore also where
 the bot's team and `IsBot` are seeded.
 
-Using the human prefab is what keeps a bot honest: same collider, same speeds, same possession rule,
-same kick. It has one consequence, and it is the reason bots are confined to practice for now — that
+Using the human prefab is what keeps a bot honest: same collider, same speeds, same hit range, same
+push/grab. It has one consequence, and it is the reason bots are confined to practice for now — that
 prefab is flagged `DestroyWhenStateAuthorityLeaves`, so **a bot dies with the master**. In a practice
 match the master is the only human and the match ends anyway. Filling a real 2v2 needs a prefab of
 its own, flagged `MasterClientObject` so Fusion migrates it; the human prefab must NOT change, because
 your avatar should vanish when you quit.
 
-One deliberate side effect of sharing the human's contextual button: if a bot loses the ball during
-the fraction of a second it holds the kick, the release lands in the no-ball branch and comes out as a
-push. That is the same code a person runs, and it is left alone.
+The contextual button is shared code, unconditionally: `NetPlayer.HandleBall` decides hit vs. push/grab
+from distance to the ball alone, for a bot exactly as for a person. There is no "the bot was mid-kick"
+edge case any more to reason about, because there is no longer a multi-tick kick to be mid of — a hit
+is one instantaneous impulse on the press tick.
 
 Do not reach for input structs, `OnInput` or input authority. Those are client-server concepts; in
 Shared Mode each peer simulates its own objects directly, and a bot is just an object the master
@@ -54,54 +59,67 @@ ticks in `FixedUpdateNetwork`.
 
 ## What a bot is
 
-A bot fills in a `PlayerIntent`: a world-space move direction, the one contextual button, and — for
-the tick the button is released — where the kick goes and how hard. Jump is polled separately, at the
-moment it is used, so a press cannot be swallowed by the tick that read it. It moves through the same
-`CharacterController` at the same speeds, and it takes the ball by the same proximity rule. If a bot ever needs a shortcut the human
+A bot fills in a `PlayerIntent`: a world-space move direction and the one contextual button. When the
+ball is within `NetPlayer.hitRange`, pressing that button hits it — direction comes from the mover's
+own movement/facing, not from anything the brain names, exactly as for a human. Jump is polled
+separately, at the moment it is used, so a press cannot be swallowed by the tick that read it. It moves
+through the same `CharacterController` at the same speeds. If a bot ever needs a shortcut the human
 does not have, the design is wrong.
 
 ## Three layers
 
-- **steering** — where to go: intercept the ball's predicted position, arrive without overshooting,
-  keep off a team mate's toes.
-- **player** — a small state machine: go to ball, carry, shoot, support, fall back.
-- **team** — exactly one bot per side is on the ball; the other takes a support position. Two bots
-  converging on the same ball is the loudest "these are bots" signal in a team game.
+- **steering** — where to go: for the ball, aim for a point on its far side (away from the attacking
+  goal) so arriving in hit range means already moving toward goal, not sideways into it; for an
+  opponent, run straight at them, since `NetPlayer`'s push/grab only finds a target in front of itself.
+- **player** — a small state machine: chase the ball and hit it on contact, or tackle whichever
+  opponent is about to reach the ball first. There is no carry/shoot/support split any more — there is
+  nothing to carry.
+- **team** — STILL NOT DONE. Exactly one bot per side is on the pitch today, so nothing yet exercises
+  "two bots, one goes for the ball, the other holds a support position." Two bots converging on the
+  same ball will be the loudest "these are bots" signal in a team game, same as before the reset.
 
 ## Believability is the point, and it is tuning
 
-A bot that reacts in one tick and aims perfectly reads as a bot immediately. The levers, in rough
-order of how much they matter here:
+A bot that reacts in one tick reads as a bot immediately. The levers, in rough order of how much they
+matter here:
 
-1. **intercept, don't chase** — run at where the ball will be, not where it is — NOT DONE
+1. **approach the ball from the right side, not head-on** — done, `approachOffset`; replaces the old
+   aimed-shot-on-release, which no longer exists now that a hit is instantaneous and unaimed
 2. **commitment window** — decide, then stick with it for a beat; re-deciding every tick jitters —
-   done: one shot plan per possession, one challenge held to the end
+   done: one challenge held to the end (`_tackleFor`)
 3. **input ramp** — no thumb produces a step change in direction — done, `steerRamp`
-4. **reaction delay** on decisions, ~180–260 ms, never on movement — done, `reactionSeconds`, and
-   applied to the change of MODE so the feet keep going while the head catches up
-5. **aim error** growing with distance, and the occasional real mistake — done, as an ANGLE
-6. **top speed** just under a human's — done, `topSpeed`
+4. **reaction delay** on the chase/tackle decision, ~180–260 ms, never on movement — done,
+   `reactionSeconds`
+5. **top speed** just under a human's — done, `topSpeed`
+6. **intercept, don't chase** — run at where the ball will be, not where it is — STILL NOT DONE, same
+   as before the reset
 
-Difficulty is not one number. Reaction, aim, speed, aggression and positional discipline are
-separate levers, and moving them together with a single slider is what makes bots feel cheap. Tune
-one believable profile first; levels later, if ever.
+What is GONE, because the mechanic it was tuning no longer exists: shot distance drawn per possession,
+angular aim error, the miss chance, and the near/far power curve. A hit's power is a fixed constant on
+`NetBall` now (`hitImpulse`) — there is nothing left for a bot to decide about how hard it hits, only
+where it is standing and which way it is moving when it presses the button.
 
-None of this can be settled by reading: it needs someone playing against it and saying "too slow",
-"it always robs me", "it jitters". Expect several passes.
+Difficulty is not one number. Reaction, positioning and aggression are separate levers, and moving
+them together with a single slider is what makes bots feel cheap. Tune one believable profile first;
+levels later, if ever.
+
+None of this can be settled by reading: it needs someone playing against it and saying "too slow", "it
+never scores", "it jitters". Expect several passes — more than usual right after this reset, since the
+whole approach-and-hit behaviour is new and has not been felt on a phone yet.
 
 ## Two things the pitch does that are not obvious
 
-**A harder shot goes higher, not further along the ground.** `NetBall` applies a fixed `liftRatio` to
-every kick, so the impulse sets speed and climb together: the ball leaves the foot at 0.6 m and gains
-roughly 0.32 x distance before gravity brings it back, whatever the power. A goal counts only below
-`goalHeight` (3 m). At full power the ball crosses the line at 3.1 m from ten metres out and 3.9 m
-from twenty — over the bar, never a goal. Power therefore has to stay in a narrow band (~0.45 to
-~0.72) and barely rise with distance. Writing `power = distance / range`, which is what it looks like
-it should be, makes every long shot sail over and reads as a completely different bug.
+**A harder hit goes higher, not further along the ground.** `NetBall` applies a fixed `liftRatio` to
+every hit, so the impulse sets speed and climb together: the ball leaves the foot at 0.6 m and gains
+roughly 0.32 x distance before gravity brings it back. A goal counts only below `goalHeight` (3 m).
+Since `hitImpulse` is now a single fixed constant rather than something aimed per-shot, this mostly
+matters for choosing THAT constant: too high and every hit from distance sails over the bar, same
+failure mode as the old "power scales with distance" bug, just reached a different way.
 
-**Height decides nothing about possession.** The ball picks the nearest player by FLAT distance, so
-jumping wins no header and costs a little air control. The bot jumps anyway, because somebody who
-never leaves the ground with the ball over their head does not look like somebody.
+**Height decides nothing about who can hit the ball.** The range check is flat-agnostic in the sense
+that it does not reward height — a jump costs a bot some air control and wins nothing else. It jumps
+for a high ball anyway, because somebody who never leaves the ground with the ball over their head does
+not look like somebody.
 
 ## Tuning
 
@@ -109,24 +127,28 @@ never leaves the ground with the ball over their head does not look like somebod
 runtime by `BotDirector`, not authored on a prefab, so there is no inspector in the loop: **the
 numbers in the file are the numbers that ship.** Change them there.
 
-Conversion, measured against the geometry above with the current 6°–16° error: about 99% from 9 m,
-94% from 12, 77% from 16, 55% from 20. Deadly from close is correct — there is no keeper and the
-mouth is 6.8 m wide — and a shot from twenty is a coin flip, which is what makes shooting from
-distance a decision rather than a formality.
+The old conversion-rate measurement (99% from 9 m, down to 55% from 20) was for the aimed, distance-
+scaled shot that no longer exists. Nothing here replaces it yet — the new approach-and-hit behaviour
+has not been measured against the goal at all. Do not assume a conversion rate for it; play it and
+find out.
 
 ## Debug scaffolding, currently in
 
 Bots wear a floating **BOT n** label in the match, numbered by network id so every client agrees. It
 was asked for explicitly and is meant to come out again: `Scripts/NameTag.cs`, plus
-`NetPlayer.UpdateNameTag`, its call in `Render`, and the two fields beside `_aimLine`.
+`NetPlayer.UpdateNameTag` and its call in `Render`.
 
 ## Status
 
-- [x] step 1 — `OwnerId` identifies an object; `NetPlayer.Live`; forfeit counts humans
-- [x] step 2 — one bot, dumbest brain (seek ball, shoot at goal), reachable from ALLENAMENTO in the
+- [x] step 1 — `NetPlayer.Live`; forfeit counts humans
+- [x] step 2 — one bot, dumbest brain (seek ball, hit toward goal), reachable from ALLENAMENTO in the
       mode menu: a private invisible room of one human, `BotDirector` puts a bot on the other side
-- [~] step 3 — believability. Done: challenge the carrier (push or grab, one committed act), speed
-      capped under a human's, steering ramp, reaction delay on decisions, jump, shot distance drawn
-      per possession, angular aim error with the occasional real miss.
-      Left: **intercept instead of chase**, and team roles once there is more than one bot
+- [x] CORE_GAMEPLAY_RESET — possession/dribble removed project-wide; `BotBrain` rewritten around
+      chase-and-hit + tackle-the-nearest-threat. Not yet felt on a phone: approach angle, hit
+      commit range, and the fixed hit impulse are all first guesses.
+- [~] believability. Done: challenge the nearest threat to the ball (push or grab, one committed
+      act), speed capped under a human's, steering ramp, reaction delay on the chase/tackle decision,
+      jump, approach-from-behind-the-ball steering.
+      Left: **intercept instead of chase**, and team roles once there is more than one bot — both
+      unchanged from before the reset, neither was done then either
 - [ ] later — a bot prefab of its own, so bots can survive the master leaving and fill a real match
