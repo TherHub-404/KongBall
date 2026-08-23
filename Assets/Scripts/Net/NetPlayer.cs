@@ -40,6 +40,7 @@ namespace KongBall
         public float pushCooldown = 5f;
         public float holdThreshold = 0.3f;   // hold longer than this = GRAB (else = push)
         public float grabDuration = 1.5f;    // max grab hold
+        public float grabCooldown = 5f;      // same pace as push, its own independent timer
         public float grabMoveMultiplier = 0.4f; // grabber can still shuffle slowly while holding
 
         [Networked] public int NetTeam { get; set; }        // 0 = Blue, 1 = Red
@@ -57,6 +58,7 @@ namespace KongBall
 
         TickTimer _hitCd;
         TickTimer _pushCd;
+        TickTimer _grabCd;
         TickTimer _grabLock;   // grabber is rooted while holding a victim
         NetPlayer _grabTarget;
         float _actionHeldTime;
@@ -87,6 +89,8 @@ namespace KongBall
             ? Mathf.Clamp01((_hitCd.RemainingTime(Runner) ?? 0f) / Mathf.Max(0.0001f, hitCooldown)) : 0f;
         public float PushCooldown01 => Runner != null
             ? Mathf.Clamp01((_pushCd.RemainingTime(Runner) ?? 0f) / Mathf.Max(0.0001f, pushCooldown)) : 0f;
+        public float GrabCooldown01 => Runner != null
+            ? Mathf.Clamp01((_grabCd.RemainingTime(Runner) ?? 0f) / Mathf.Max(0.0001f, grabCooldown)) : 0f;
 
         CharacterController _cc;
         LocalInputSource _input;    // the human's joystick; null on a bot
@@ -97,8 +101,6 @@ namespace KongBall
         int _sfxKickSeq;
         bool _wasStumbled;
         static NetBall Ball => NetBall.Instance;
-        Collider _ballCol;
-        bool _ballIgnored;
         bool _prevAction;
         bool _camReady;
         NameTag _tag;          // debug label over bots; temporary, see UpdateNameTag
@@ -258,8 +260,6 @@ namespace KongBall
                 return;
             }
 
-            UpdateBallIgnore(); // per-client, once: the ball never body-blocks a player's approach
-
             // One read per tick, one shape, whoever produced it. Everything below this line is the
             // same code for a person and for a bot.
             PlayerIntent want = ReadIntent(dt);
@@ -393,7 +393,7 @@ namespace KongBall
                 // No ball in range: HOLD = GRAB, quick TAP = PUSH.
                 if (action) _actionHeldTime += Runner.DeltaTime; else _actionHeldTime = 0f;
 
-                if (action && !_grabFired && _actionHeldTime >= holdThreshold)
+                if (action && !_grabFired && _actionHeldTime >= holdThreshold && _grabCd.ExpiredOrNotRunning(Runner))
                 {
                     var target = FindTargetInFront();
                     if (target != null)
@@ -403,6 +403,7 @@ namespace KongBall
                         _grabLock = TickTimer.CreateFromSeconds(Runner, grabDuration);
                         GrabbingUntil = TickTimer.CreateFromSeconds(Runner, grabDuration);
                         _grabFired = true;
+                        _grabCd = TickTimer.CreateFromSeconds(Runner, grabCooldown);
                     }
                 }
                 if (!action && _prevAction && !_grabFired && _pushCd.ExpiredOrNotRunning(Runner))
@@ -463,21 +464,25 @@ namespace KongBall
             if (_grabTarget != null) { _grabTarget.RPC_Release(); _grabTarget = null; }
         }
 
-        // The ball ignores every player's body, always — not just whoever "has" it, because nobody
-        // does any more. Reason: on a non-authority client the ball is a kinematic NetworkTransform
-        // proxy, so a moving CharacterController gets blocked by it (the ball acts like a little
-        // wall), which would stop a player ever reaching hit range in the first place. The hit itself
-        // is a gameplay-authored interaction (NetBall.Hit), not raw collision, by design — see
-        // CORE_GAMEPLAY_RESET section 09. Registered once, the first tick both colliders exist.
-        void UpdateBallIgnore()
+        // The physical bump: a CharacterController does not push a Rigidbody just by colliding with
+        // it, Unity never applies that force on its own, so without this the ball sat still while a
+        // player visibly overlapped it. Fires every tick the CharacterController is actively moving
+        // into the ball's collider, on the mover's own authority client — not on every collision
+        // (e.g. the ball rolling into a stationary player), because ordinary physics already handles
+        // a moving Rigidbody hitting a static collider on its own. The deliberate ACTION hit
+        // (NetBall.Hit) stays the strong, precise interaction; this is only the ambient "I walked
+        // into it" push.
+        void OnControllerColliderHit(ControllerColliderHit hit)
         {
-            if (_ballIgnored || _cc == null) return;
-            var ball = Ball;
-            if (ball == null) return;
-            if (_ballCol == null) _ballCol = ball.GetComponent<Collider>();
-            if (_ballCol == null) return;
-            Physics.IgnoreCollision(_ballCol, _cc, true);
-            _ballIgnored = true;
+            if (!HasStateAuthority) return;
+            var hitBall = hit.collider.GetComponentInParent<NetBall>();
+            if (hitBall == null || hitBall != Ball) return;
+
+            Vector3 vel = _horizVel;
+            if (vel.sqrMagnitude < 0.01f) return;
+
+            if (hitBall.Object != null && hitBall.Object.HasStateAuthority) hitBall.Bump(vel);
+            else hitBall.RPC_Bump(vel);
         }
 
         // Teleport back to the team's kickoff spot (called on a new kickoff, and by the out-of-bounds

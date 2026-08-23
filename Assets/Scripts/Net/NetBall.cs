@@ -18,7 +18,7 @@ namespace KongBall
     public class NetBall : NetworkBehaviour, IStateAuthorityChanged
     {
         [Header("Ball")]
-        public float radius = 0.5f;
+        public float radius = 0.6f;
 
         [Header("Hit")]
         public float hitImpulse = 10f;
@@ -28,6 +28,13 @@ namespace KongBall
                  "already checked on its own client — generous, to tolerate the latency between the " +
                  "two, but still a real gate: no client writes ball state on its own say-so.")]
         public float hitValidationRange = 2.2f;
+
+        [Header("Bump (passive body contact)")]
+        [Tooltip("A CharacterController does not push a Rigidbody just by walking into it — Unity " +
+                 "never applies that force for you, so without this the ball would sit there and let " +
+                 "a player pass straight through it. Scales with the player's own horizontal speed, " +
+                 "so a stationary bump does nothing and a sprint sends it rolling.")]
+        public float bumpForceMultiplier = 2.5f;
 
         // The pitch and the goals are NOT described here any more: they live in Arena, because the
         // wall the ball bounces off, the paint the player sees and the checks below all have to
@@ -191,6 +198,25 @@ namespace KongBall
             _rb.angularVelocity = Vector3.zero;
             _rb.AddForce(dir * hitImpulse + Vector3.up * hitImpulse * lift, ForceMode.Impulse);
             _rb.AddTorque(Vector3.Cross(Vector3.up, dir) * hitImpulse * spinRatio, ForceMode.Impulse);
+        }
+
+        // --- Bump ------------------------------------------------------------------------------
+        // A gentler, continuous cousin of Hit: NetPlayer calls this from OnControllerColliderHit
+        // every tick its CharacterController is pushing into the ball, so walking through it moves
+        // it instead of passing through — the deliberate ACTION hit stays the strong, precise one.
+
+        [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+        public void RPC_Bump(Vector3 horizVel)
+        {
+            Bump(horizVel);
+        }
+
+        public void Bump(Vector3 horizVel)
+        {
+            if (!HasStateAuthority || _rb == null) return;
+            horizVel.y = 0f;
+            if (horizVel.sqrMagnitude < 0.01f) return;
+            _rb.AddForce(horizVel * bumpForceMultiplier, ForceMode.Force);
         }
 
         public void KickoffReset()

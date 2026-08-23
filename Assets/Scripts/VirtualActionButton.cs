@@ -80,7 +80,10 @@ namespace KongBall
             bool hitReady = p.BallInHitRange;
             if (_label != null) _label.text = hitReady ? "KICK" : "PUSH";
 
-            float frac = hitReady ? p.HitCooldown01 : p.PushCooldown01;
+            // PUSH and GRAB are the same tap-vs-hold gesture and now each carry their own cooldown;
+            // the ring shows whichever is more restrictive so it never promises an action that would
+            // actually still be on cooldown.
+            float frac = hitReady ? p.HitCooldown01 : Mathf.Max(p.PushCooldown01, p.GrabCooldown01);
             if (_cooldownRing != null)
             {
                 _cooldownRing.enabled = frac > 0.001f;
