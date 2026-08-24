@@ -56,6 +56,9 @@ crashlytics-build.properties
 __pycache__/
 *.pyc
 
+# === Node degli script di CI (es. glb_preview) ===
+node_modules/
+
 # === OS / IDE ===
 .DS_Store
 .vs/
