@@ -112,6 +112,12 @@ async function run() {
             renderer.render(scene, sideCamera);
             shots.push({ name: 'peak_side_' + clip.name, dataUrl: renderer.domElement.toDataURL('image/png') });
 
+            // Last frame too — for a one-shot clip that's meant to hand off cleanly to idle/run
+            // (e.g. a fall-and-get-up), this is the pose the crossfade actually starts from.
+            mixer.setTime(Math.max(0, clip.duration - 1 / 24));
+            renderer.render(scene, sideCamera);
+            shots.push({ name: 'end_side_' + clip.name, dataUrl: renderer.domElement.toDataURL('image/png') });
+
             clipReports.push({ clip: clip.name, duration: clip.duration, maxRotationDeg: maxDeg, maxBone, maxT });
 
             mixer.stopAllAction();
