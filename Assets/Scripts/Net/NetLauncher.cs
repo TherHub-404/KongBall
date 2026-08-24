@@ -102,6 +102,8 @@ namespace KongBall
         bool _started;
         float _ensureCooldown;
         float _settleUntil;
+        bool _ballSpawnRequested;
+        bool _matchSpawnRequested;
         float _leaveAt;
         float _waitUntil;
         int _lastSeated = -1;
@@ -289,6 +291,8 @@ namespace KongBall
             if (_runner.gameObject != null) Destroy(_runner.gameObject);
             _runner = null;
             _settleUntil = 0f;
+            _ballSpawnRequested = false;
+            _matchSpawnRequested = false;
         }
 
         // --- spawning ----------------------------------------------------------------------------
@@ -329,13 +333,22 @@ namespace KongBall
             if (_settleUntil <= 0f) _settleUntil = Time.time + settle;
             if (Time.time < _settleUntil) return;
 
-            if (ballPrefab != null && NetBall.Instance == null)
+            // NetBall.Instance/MatchController.Instance only turn non-null once each object's own
+            // Spawned() has actually run, not the instant Spawn() is called — and this method is
+            // reachable again (from OnPlayerLeft, or every second from Update) before that lands, in
+            // practice mode especially since settle above is 0. Without a local "already asked" flag,
+            // three calls that all still see Instance == null issued three Spawn()s — seen on a phone
+            // as three balls in allenamento, only two of which the Instance dedup could ever have been
+            // built to expect ("two balls can briefly coexist", per NetBall.Spawned).
+            if (ballPrefab != null && NetBall.Instance == null && !_ballSpawnRequested)
             {
+                _ballSpawnRequested = true;
                 runner.Spawn(ballPrefab, new Vector3(0f, 0.5f, 0f), Quaternion.identity);
                 Debug.Log("[Net] Master spawned ball");
             }
-            if (matchPrefab != null && MatchController.Instance == null)
+            if (matchPrefab != null && MatchController.Instance == null && !_matchSpawnRequested)
             {
+                _matchSpawnRequested = true;
                 runner.Spawn(matchPrefab, Vector3.zero, Quaternion.identity);
                 Debug.Log("[Net] Master spawned MatchController");
             }
