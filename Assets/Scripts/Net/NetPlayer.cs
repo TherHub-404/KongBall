@@ -30,10 +30,12 @@ namespace KongBall
         public float jumpBufferTime = 0.12f;
         [Tooltip("Phone-test feedback: jump was spammable. Each ground jump before jumpFatigueRecover " +
                  "has passed since the last one adds a fatigue stack, down to jumpFatigueMinMul at " +
-                 "jumpFatigueMaxStacks; resting that long resets to full power.")]
+                 "jumpFatigueMaxStacks; resting that long resets to full power. 2.5s made even a " +
+                 "deliberate double-tap (not real spamming) land underpowered — 0.75s still kills a " +
+                 "bunny-hop chain but lets a normal-paced second jump come back at full height.")]
         public int jumpFatigueMaxStacks = 3;
         public float jumpFatigueMinMul = 0.4f;
-        public float jumpFatigueRecover = 2.5f;
+        public float jumpFatigueRecover = 0.75f;
 
         [Header("Hit (ACTION on the ball)")]
         [Tooltip("How close the ball has to be for ACTION to hit it. Out of this range, ACTION does " +
