@@ -28,7 +28,6 @@ namespace KongBall
         void BuildPresentation()
         {
             // The ring first, the label second, so the label draws on top of it.
-            var baseImage = GetComponent<Image>();
             var myRt = (RectTransform)transform;
 
             var ringGo = new GameObject("CooldownRing", typeof(RectTransform));
@@ -38,9 +37,11 @@ namespace KongBall
             ringRt.pivot = new Vector2(0.5f, 0.5f);
             ringRt.sizeDelta = myRt.sizeDelta + new Vector2(28f, 28f); // a ring AROUND the button
             _cooldownRing = ringGo.AddComponent<Image>();
-            // Reuses the button's own sprite so the ring matches its round shape exactly, instead of
-            // guessing the name of a Unity built-in sprite.
-            _cooldownRing.sprite = baseImage != null ? baseImage.sprite : null;
+            // This button is built from Ui.ToyButton now, whose root Image is transparent with no
+            // sprite (see Ui.cs) — there is nothing left on this GameObject to copy a round shape
+            // from, so the ring gets its own, from the same corner-radius formula ToyButton itself
+            // uses, scaled to the ring's own (slightly larger) size.
+            _cooldownRing.sprite = Ui.RoundedRectSprite(Mathf.RoundToInt(ringRt.sizeDelta.y * 0.32f));
             _cooldownRing.type = Image.Type.Filled;
             _cooldownRing.fillMethod = Image.FillMethod.Radial360;
             _cooldownRing.fillOrigin = (int)Image.Origin360.Top;
