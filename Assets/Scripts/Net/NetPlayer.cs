@@ -28,11 +28,11 @@ namespace KongBall
         public float fallMultiplier = 1.7f;
         public float coyoteTime = 0.12f;
         public float jumpBufferTime = 0.12f;
-        [Tooltip("Phone-test feedback: jump was spammable. Each ground jump before jumpFatigueRecover " +
-                 "has passed since the last one adds a fatigue stack, down to jumpFatigueMinMul at " +
-                 "jumpFatigueMaxStacks; resting that long resets to full power. 2.5s made even a " +
-                 "deliberate double-tap (not real spamming) land underpowered — 0.75s still kills a " +
-                 "bunny-hop chain but lets a normal-paced second jump come back at full height.")]
+        [Tooltip("Phone-test feedback: jump was spammable. Each ground jump adds a fatigue stack, down " +
+                 "to jumpFatigueMinMul at jumpFatigueMaxStacks. Stacks decay one at a time for every " +
+                 "jumpFatigueRecover seconds spent NOT jumping — not an all-or-nothing reset at that " +
+                 "mark, which needed one full clean 0.75s+ gap to recover at all and, short of that, " +
+                 "read as permanently stuck weak no matter how long you'd actually waited.")]
         public int jumpFatigueMaxStacks = 3;
         public float jumpFatigueMinMul = 0.4f;
         public float jumpFatigueRecover = 0.75f;
@@ -358,10 +358,14 @@ namespace KongBall
             bool canGroundJump = _jumpBuf > 0f && _coyote > 0f;
             if (canGroundJump)
             {
-                // Anti-spam, from a phone test: full power on the first jump (or after resting
-                // jumpFatigueRecover seconds), weaker on each one that follows too soon, down to
-                // jumpFatigueMinMul by jumpFatigueMaxStacks — bunny-hopping tires the legs out.
-                if (_timeSinceLastJump >= jumpFatigueRecover) _jumpFatigueStacks = 0;
+                // Anti-spam, from a phone test: full power on the first jump, weaker on each one that
+                // follows too soon, down to jumpFatigueMinMul by jumpFatigueMaxStacks — bunny-hopping
+                // tires the legs out. Decays gradually (one stack per jumpFatigueRecover seconds of
+                // rest) rather than needing one unbroken jumpFatigueRecover-second gap to reset at
+                // all, so waiting always helps instead of the jump staying at minimum until a single
+                // clean window happens to line up.
+                int decayed = Mathf.FloorToInt(_timeSinceLastJump / jumpFatigueRecover);
+                if (decayed > 0) _jumpFatigueStacks = Mathf.Max(0, _jumpFatigueStacks - decayed);
                 float fatigueMul = Mathf.Lerp(1f, jumpFatigueMinMul, (float)_jumpFatigueStacks / jumpFatigueMaxStacks);
                 _vY = jumpVelocity * fatigueMul;
                 _jumpFatigueStacks = Mathf.Min(_jumpFatigueStacks + 1, jumpFatigueMaxStacks);

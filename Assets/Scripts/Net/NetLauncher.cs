@@ -340,17 +340,33 @@ namespace KongBall
             // three calls that all still see Instance == null issued three Spawn()s — seen on a phone
             // as three balls in allenamento, only two of which the Instance dedup could ever have been
             // built to expect ("two balls can briefly coexist", per NetBall.Spawned).
+            //
+            // The flag is only set on a SUCCESSFUL Spawn(): Fusion documents it as returning null "if
+            // it was not able to spawn the object" (Fusion.Runtime.xml), and the first version of this
+            // guard set the flag unconditionally — a single failed attempt would have latched the flag
+            // true forever with Instance still null, freezing the ball for the rest of the session
+            // (NetBall.FixedUpdateNetwork zeroes velocity every tick while MatchController.Instance or
+            // its phase isn't Playing) and silently killing ACTION hits too (HandleBall does nothing
+            // when Ball is null). A failed Spawn() must be retried, not remembered as done.
             if (ballPrefab != null && NetBall.Instance == null && !_ballSpawnRequested)
             {
-                _ballSpawnRequested = true;
-                runner.Spawn(ballPrefab, new Vector3(0f, 0.5f, 0f), Quaternion.identity);
-                Debug.Log("[Net] Master spawned ball");
+                var spawned = runner.Spawn(ballPrefab, new Vector3(0f, 0.5f, 0f), Quaternion.identity);
+                if (spawned != null)
+                {
+                    _ballSpawnRequested = true;
+                    Debug.Log("[Net] Master spawned ball");
+                }
+                else Debug.LogWarning("[Net] ball Spawn() failed, will retry");
             }
             if (matchPrefab != null && MatchController.Instance == null && !_matchSpawnRequested)
             {
-                _matchSpawnRequested = true;
-                runner.Spawn(matchPrefab, Vector3.zero, Quaternion.identity);
-                Debug.Log("[Net] Master spawned MatchController");
+                var spawned = runner.Spawn(matchPrefab, Vector3.zero, Quaternion.identity);
+                if (spawned != null)
+                {
+                    _matchSpawnRequested = true;
+                    Debug.Log("[Net] Master spawned MatchController");
+                }
+                else Debug.LogWarning("[Net] MatchController Spawn() failed, will retry");
             }
 
             // Bots are shared objects like any other, so they are the master's to create and they
