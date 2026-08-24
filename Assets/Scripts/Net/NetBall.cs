@@ -21,11 +21,13 @@ namespace KongBall
         public float radius = 0.75f;
 
         [Header("Hit")]
-        // Halved-ish from the previous 10, in step with the lighter mass below (0.35 vs 0.6): impulse
-        // hits set VELOCITY, not force, so a lighter ball flies further from the same push unless the
-        // impulse comes down to match. This keeps the resulting shot speed roughly where it was.
-        public float hitImpulse = 5.8f;
-        public float liftRatio = 0.32f;
+        // Impulse hits set VELOCITY, not force, so a lighter ball flies further from the same push
+        // unless the impulse comes down to match — impulse and mass were raised together here (mass
+        // 0.35->0.45, this 5.8->7.5) to keep horizontal shot speed the same while liftRatio came DOWN
+        // (0.32->0.22): the ball was launching too high off a hit. Not felt on a phone yet — tune
+        // again once someone has.
+        public float hitImpulse = 7.5f;
+        public float liftRatio = 0.22f;
         public float spinRatio = 0.5f;
         [Tooltip("Authority-side validation range, on top of whatever range the asking NetPlayer " +
                  "already checked on its own client — generous, to tolerate the latency between the " +
@@ -235,7 +237,10 @@ namespace KongBall
 
             float impulse = hitImpulse * Mathf.Max(0.1f, powerMultiplier);
             bool aerial = _rb.position.y > radius + 0.6f;
-            float lift = aerial ? liftRatio * 2.2f : liftRatio;
+            // Was 2.2x: combined with the old liftRatio that sent an aerial hit (e.g. the spin
+            // attack, which almost always connects mid-air) far too high. 1.6x still gives an aerial
+            // hit noticeably more air than a grounded one, just not an escape-the-pitch one.
+            float lift = aerial ? liftRatio * 1.6f : liftRatio;
             _rb.linearVelocity = Vector3.zero;
             _rb.angularVelocity = Vector3.zero;
             _rb.AddForce(dir * impulse + Vector3.up * impulse * lift, ForceMode.Impulse);
