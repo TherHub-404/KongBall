@@ -19,6 +19,11 @@ namespace KongBall
     {
         [Header("Ball")]
         public float radius = 0.75f;
+        [Tooltip("Safety ceiling on the ball's own speed, checked every tick. Nothing in this game " +
+                 "is supposed to send it faster than a single ACTION hit already does (~16-17 m/s at " +
+                 "the numbers above) — this exists so a corner-pocket bounce loop or a hit landing on " +
+                 "top of leftover velocity can't quietly stack into a ball that outruns the game.")]
+        public float maxSpeed = 25f;
 
         [Header("Hit")]
         // Impulse hits set VELOCITY, not force, so a lighter ball flies further from the same push
@@ -162,6 +167,11 @@ namespace KongBall
                 _rb.angularVelocity = Vector3.zero;
                 return;
             }
+
+            // Speed ceiling, checked every tick a real ball exists to keep an accumulation (repeated
+            // hits, a bad bounce loop) from ever compounding into something unplayable — see maxSpeed.
+            if (_rb.linearVelocity.sqrMagnitude > maxSpeed * maxSpeed)
+                _rb.linearVelocity = _rb.linearVelocity.normalized * maxSpeed;
 
             // Out-of-bounds safety net. The slack is deliberate: the wall already keeps the ball
             // in, so getting here means physics tunnelled through it. Resetting the instant the
