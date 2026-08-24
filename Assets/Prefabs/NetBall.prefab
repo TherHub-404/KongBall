@@ -201,8 +201,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::KongBall.NetBall
   radius: 0.75
-  hitImpulse: 5.8
-  liftRatio: 0.32
+  hitImpulse: 7.5
+  liftRatio: 0.22
   spinRatio: 0.5
   hitValidationRange: 2.2
   bumpForceMultiplier: 2.5
@@ -214,7 +214,7 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8325656882308377138}
   serializedVersion: 5
-  m_Mass: 0.35
+  m_Mass: 0.45
   m_LinearDamping: 0.1
   m_AngularDamping: 0.3
   m_CenterOfMass: {x: 0, y: 0, z: 0}
