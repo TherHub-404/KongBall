@@ -8,8 +8,8 @@ namespace KongBall
     // Runtime skeletal animation blending for the rigged FallGuy character, built entirely from a
     // PlayableGraph — no AnimatorController asset, no Editor authoring, matching AGENTS.md #1.
     // PlayerVisual.cs attaches this to the loaded model and fills `clips` from every AnimationClip
-    // shipped inside Resources/Player/FallGuy.glb — the seven expected states are idle, run, jump,
-    // fall, hit, stumble, spin.
+    // shipped inside Resources/Player/FallGuy.glb — the expected states are idle, walk, run, jump,
+    // fall, hit, stumble, spin, celebrate.
     //
     // Jump/fall/run are read off the MODEL'S OWN transform position, not off NetPlayer's private
     // _grounded/_vY: those two are only ever written by the peer simulating that player (the state
@@ -36,9 +36,9 @@ namespace KongBall
             public bool speedFollowsMovement;
         }
 
-        [Tooltip("Fill in once a rigged model + clips exist. Expected states: idle, run, jump, fall, " +
-                 "hit, stumble, spin — anything not present just doesn't play (no throw), same 'a " +
-                 "screen without X is poor, one that throws is worse' rule as Ui.cs.")]
+        [Tooltip("Fill in once a rigged model + clips exist. Expected states: idle, walk, run, jump, " +
+                 "fall, hit, stumble, spin, celebrate — anything not present just doesn't play (no " +
+                 "throw), same 'a screen without X is poor, one that throws is worse' rule as Ui.cs.")]
         public NamedClip[] clips = new NamedClip[0];
 
         [Tooltip("How fast a state's weight ramps to 1 when it becomes active. Not measured — start " +
@@ -164,9 +164,19 @@ namespace KongBall
                 }
             }
 
+            var mc = MatchController.Instance;
+            // Same replicated state MatchCamera already zooms in on during GoalPause (LastScorerId),
+            // read here too so the scorer's own dance plays identically on every client — nobody
+            // decides locally who gets to celebrate. Below hit/stumble/spin on purpose: whichever of
+            // those is still resolving (the very hit that scored, or a stumble landed a heartbeat
+            // before) gets to finish before the celebration takes over, not cut off by it.
+            bool celebrating = mc != null && mc.CurPhase == MatchController.Phase.GoalPause
+                                && mc.LastScorerId == _player.NetId;
+
             if (_player.KickSeq != _lastKickSeq) { _lastKickSeq = _player.KickSeq; CrossFadeTo("hit"); }
             else if (_player.IsStumbled) CrossFadeTo("stumble");
             else if (_player.IsSpinning) CrossFadeTo("spin");
+            else if (celebrating) CrossFadeTo("celebrate");
             else if (airborne) CrossFadeTo(vel.y > 0f ? "jump" : "fall");
             else if (hSpeed > runRefSpeed * runCrossoverFraction) CrossFadeTo("run");
             else if (hSpeed > runRefSpeed * 0.15f) CrossFadeTo("walk");

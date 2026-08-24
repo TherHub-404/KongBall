@@ -13,6 +13,8 @@ namespace KongBall
         int _lastTotal = -1;
         int _lastCount = -1;
         float _viaTimer;
+        float _goldenFlashTimer;
+        bool _lastGolden;
         float _pop;
         MatchController.Phase _lastPhase = MatchController.Phase.Finished;
 
@@ -38,6 +40,10 @@ namespace KongBall
                         if (mc.ByForfeit) extra += "  (RITIRO)";
                         break;
                     default:
+                        // The clock is frozen at 0 for the rest of the match once golden goal starts
+                        // (MatchController stops counting it down) — showing "0:00" the whole time
+                        // would read as a bug, not as "sudden death is on."
+                        if (mc.GoldenGoal) { extra = "   GOLDEN GOAL"; break; }
                         if (mc.endless) { extra = ""; break; }
                         int t = Mathf.CeilToInt(mc.MatchTime);
                         extra = "   " + (t / 60) + ":" + (t % 60).ToString("00"); break;
@@ -52,6 +58,11 @@ namespace KongBall
         {
             string b = null;
             var ph = mc.CurPhase;
+
+            // Armed once, the instant GoldenGoal flips on — same one-shot-flash shape as VIA!, just
+            // triggered by a flag instead of a phase change, since golden goal starts mid-Playing.
+            if (mc.GoldenGoal && !_lastGolden) { _goldenFlashTimer = 1.6f; _pop = 1f; if (SfxManager.Instance != null) SfxManager.Instance.PlayKick(); }
+            _lastGolden = mc.GoldenGoal;
 
             // Waiting says nothing here. This banner is sized for "GOAL!", so a full sentence ran off
             // both edges of the screen — and the waiting room is now a screen of its own anyway.
@@ -79,6 +90,11 @@ namespace KongBall
                     _viaTimer -= Time.deltaTime;
                     b = "VIA!";
                     if (_lastPhase == MatchController.Phase.Countdown) _pop = 1f;
+                }
+                else if (_goldenFlashTimer > 0f)
+                {
+                    _goldenFlashTimer -= Time.deltaTime;
+                    b = "GOLDEN GOAL";
                 }
             }
             _lastPhase = ph;
