@@ -11,7 +11,7 @@ namespace KongBall
     {
         // "stumble" plays once — a fall-backward-then-get-up clip timed to NetPlayer.stunDuration —
         // not a continuous loop, so it can hold its final (standing) pose until IsStumbled clears.
-        static readonly string[] LoopStates = { "idle", "run", "fall", "spin" };
+        static readonly string[] LoopStates = { "idle", "walk", "run", "fall", "spin" };
 
         void Awake()
         {
@@ -37,10 +37,12 @@ namespace KongBall
                 // RigAnimator) — glTFast imports every clip as WrapMode.Loop by default, which would
                 // make one-shot states like "jump"/"hit" repeat forever instead of holding.
                 clips[i].wrapMode = loop ? WrapMode.Loop : WrapMode.Once;
-                // "hit" plays slower on request (a punch that snapped by too fast to read); "run"
-                // ties its cadence to actual move speed instead of a flat rate (see RigAnimator).
+                // "hit" plays slower on request (a punch that snapped by too fast to read); "walk"
+                // and "run" tie their cadence to actual move speed instead of a flat rate — each
+                // within its own state now (see RigAnimator's runCrossoverFraction), not one clip
+                // scaled across the whole speed range.
                 float speed = name == "hit" ? 0.6f : 1f;
-                bool followsMovement = name == "run";
+                bool followsMovement = name == "walk" || name == "run";
                 rig.clips[i] = new RigAnimator.NamedClip
                 {
                     state = name, clip = clips[i], loop = loop, speed = speed, speedFollowsMovement = followsMovement

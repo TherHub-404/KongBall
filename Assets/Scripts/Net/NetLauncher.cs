@@ -282,7 +282,36 @@ namespace KongBall
             if (_leaving) return;
             _leaving = true;
             if (_runner == null) { MainMenu.Show(); _leaving = false; return; }
+
+            // Ball and MatchController are Master Client Objects on purpose (see ReclaimOrphans):
+            // when OTHER peers remain, Fusion migrates them to a new master instead of destroying
+            // them, which is exactly right. But practice is always a session of one — there is no
+            // successor for a bodyless ball to migrate to — and Shutdown() alone left it sitting in
+            // the scene, inert and un-networked, for the next practice session to spawn a fresh one
+            // next to it. Reported as "restarting training leaves the old ball, now there are 3."
+            // Despawning explicitly, only when nobody else could take them over, closes that gap
+            // without touching the real migration path multiplayer still relies on.
+            if (CountActivePlayers(_runner) <= 1) DespawnOwned(_runner);
             _runner.Shutdown();   // OnShutdown puts us back on the menu
+        }
+
+        static int CountActivePlayers(NetworkRunner runner)
+        {
+            int n = 0;
+            foreach (var p in runner.ActivePlayers) n++;
+            return n;
+        }
+
+        // Despawn() itself checks state authority and no-ops otherwise (Fusion.Runtime.xml), so this
+        // only ever touches what THIS peer actually owns — safe to call even though, in a real match,
+        // most objects here belong to someone else.
+        static void DespawnOwned(NetworkRunner runner)
+        {
+            _orphanScratch.Clear();
+            runner.GetAllNetworkObjects(_orphanScratch);
+            foreach (var obj in _orphanScratch)
+                if (obj != null && obj.HasStateAuthority) runner.Despawn(obj);
+            _orphanScratch.Clear();
         }
 
         void TearDownRunner()

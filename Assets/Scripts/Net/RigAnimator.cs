@@ -49,6 +49,11 @@ namespace KongBall
                  "without touching the other")]
         public float airThreshold = 1.3f;
         public float runRefSpeed = 6f;
+        [Tooltip("Fraction of runRefSpeed above which \"run\" plays instead of \"walk\" — below the " +
+                 "0.15 idle threshold nothing plays, between that and this it's walk, above it run. " +
+                 "Lorenzo: one animation for every speed read wrong — a slow build-up should look " +
+                 "like a walk, only the top of it like a run.")]
+        public float runCrossoverFraction = 0.55f;
 
         [Header("Landing squash — presentation only, same juice family as Hitstop/MatchCamera.Shake")]
         [Tooltip("How much the model compresses vertically the instant it lands, easing back to " +
@@ -163,7 +168,8 @@ namespace KongBall
             else if (_player.IsStumbled) CrossFadeTo("stumble");
             else if (_player.IsSpinning) CrossFadeTo("spin");
             else if (airborne) CrossFadeTo(vel.y > 0f ? "jump" : "fall");
-            else if (hSpeed > runRefSpeed * 0.15f) CrossFadeTo("run");
+            else if (hSpeed > runRefSpeed * runCrossoverFraction) CrossFadeTo("run");
+            else if (hSpeed > runRefSpeed * 0.15f) CrossFadeTo("walk");
             else CrossFadeTo("idle");
 
             for (int i = 0; i < _weights.Length; i++)

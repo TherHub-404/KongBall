@@ -16,8 +16,9 @@ namespace KongBall
         public float turnSpeed = 720f;
         public float airControl = 0.55f;
         [Tooltip("How long a held direction takes to reach full acceleration. Phone-test feedback: " +
-                 "the old flat-rate ramp read as linear/instant, not a build-up to a standard speed.")]
-        public float rampUpTime = 0.35f;
+                 "the old flat-rate ramp read as linear/instant, not a build-up to a standard speed; " +
+                 "then raised again (0.35->0.8) for a noticeably slower build to top speed.")]
+        public float rampUpTime = 0.8f;
         [Tooltip("Acceleration multiplier at the very start of a held direction (t=0), before " +
                  "rampUpTime's smoothstep brings it up to 1. Not 0 — a dead first tick reads as lag.")]
         public float rampStartMul = 0.3f;
@@ -337,9 +338,13 @@ namespace KongBall
 
                 // Progressive, not linear: a held direction builds up to full acceleration over
                 // rampUpTime instead of applying it from the first tick, so reaching moveSpeed reads as
-                // a run-up rather than a snap. Resets the instant the stick releases or the player is
-                // already fast enough not to need it, so letting go and pressing again re-triggers it.
-                if (inMag > 0.15f && speedingUp) _accelT += dt; else _accelT = 0f;
+                // a run-up rather than a snap. Resets only when the direction is actually RELEASED —
+                // not, as before, whenever `speedingUp` next reads false, which happens on ordinary
+                // ticks too (wish and horizVel cross near the same magnitude constantly once close to
+                // top speed, from floating-point noise alone). That reset the ramp to rampStartMul mid
+                // -stride, snapping the acceleration rate down and back up every time it happened —
+                // reported as running looking stuttery/jerky, worse the longer a sprint went on.
+                if (inMag > 0.15f) _accelT += dt; else _accelT = 0f;
                 float rampMul = speedingUp ? Mathf.Lerp(rampStartMul, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(_accelT / rampUpTime))) : 1f;
 
                 float rate = (speedingUp ? acceleration * rampMul : deceleration) * (_grounded ? 1f : airControl);
