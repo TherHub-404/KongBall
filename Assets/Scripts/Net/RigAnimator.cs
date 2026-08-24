@@ -25,6 +25,15 @@ namespace KongBall
             public string state;
             public AnimationClip clip;
             public bool loop;
+            // Playback rate on the underlying AnimationClipPlayable — 0 would freeze the clip on its
+            // first frame, so every caller must set this explicitly; there is no implicit "1 if
+            // unset" here.
+            public float speed;
+            // When true, the EFFECTIVE speed each frame is speed * the player's current move-speed
+            // fraction (clamped), not the flat value — "run" uses this so the leg/arm cycle visibly
+            // quickens as the player actually gets up to speed, instead of always cycling at one
+            // fixed cadence regardless of how fast they're really moving.
+            public bool speedFollowsMovement;
         }
 
         [Tooltip("Fill in once a rigged model + clips exist. Expected states: idle, run, jump, fall, " +
@@ -46,6 +55,7 @@ namespace KongBall
                                      // no RuntimeAnimatorController — the graph below is the real driver
         PlayableGraph _graph;
         AnimationMixerPlayable _mixer;
+        AnimationClipPlayable[] _clipPlayables;
         readonly Dictionary<string, int> _slotOf = new Dictionary<string, int>();
         float[] _weights;
         string _current;
@@ -74,6 +84,7 @@ namespace KongBall
 
             _mixer = AnimationMixerPlayable.Create(_graph, clips.Length, false);
             _weights = new float[clips.Length];
+            _clipPlayables = new AnimationClipPlayable[clips.Length];
 
             for (int i = 0; i < clips.Length; i++)
             {
@@ -81,9 +92,11 @@ namespace KongBall
                 if (entry.clip == null) continue;
                 var clipPlayable = AnimationClipPlayable.Create(_graph, entry.clip);
                 clipPlayable.SetApplyFootIK(false);
+                clipPlayable.SetSpeed(entry.speed);
                 _graph.Connect(clipPlayable, 0, _mixer, i);
                 _mixer.SetInputWeight(i, 0f);
                 _slotOf[entry.state] = i;
+                _clipPlayables[i] = clipPlayable;
             }
 
             output.SetSourcePlayable(_mixer);
@@ -121,6 +134,15 @@ namespace KongBall
                 float target = (_current != null && _slotOf.TryGetValue(_current, out int slot) && slot == i) ? 1f : 0f;
                 _weights[i] = Mathf.MoveTowards(_weights[i], target, crossfadeSpeed * dt);
                 _mixer.SetInputWeight(i, _weights[i]);
+
+                // Phone-test feedback: running felt the same regardless of actual speed — the cycle
+                // has to visibly quicken as the player builds up to a full sprint, not play back at
+                // one fixed cadence the whole time. Clamped so it never fully freezes at a near-stop.
+                if (clips[i].speedFollowsMovement)
+                {
+                    float mul = Mathf.Clamp(_player.SpeedFraction01, 0.4f, 1.15f);
+                    _clipPlayables[i].SetSpeed(clips[i].speed * mul);
+                }
             }
         }
 

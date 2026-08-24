@@ -30,13 +30,21 @@ namespace KongBall
             rig.clips = new RigAnimator.NamedClip[clips.Length];
             for (int i = 0; i < clips.Length; i++)
             {
-                bool loop = Array.IndexOf(LoopStates, clips[i].name) >= 0;
+                string name = clips[i].name;
+                bool loop = Array.IndexOf(LoopStates, name) >= 0;
                 // AnimationClipPlayable loops or holds its last frame based on the clip's own
                 // wrapMode, not on RigAnimator.NamedClip.loop (that field isn't read anywhere in
                 // RigAnimator) — glTFast imports every clip as WrapMode.Loop by default, which would
                 // make one-shot states like "jump"/"hit" repeat forever instead of holding.
                 clips[i].wrapMode = loop ? WrapMode.Loop : WrapMode.Once;
-                rig.clips[i] = new RigAnimator.NamedClip { state = clips[i].name, clip = clips[i], loop = loop };
+                // "hit" plays slower on request (a punch that snapped by too fast to read); "run"
+                // ties its cadence to actual move speed instead of a flat rate (see RigAnimator).
+                float speed = name == "hit" ? 0.6f : 1f;
+                bool followsMovement = name == "run";
+                rig.clips[i] = new RigAnimator.NamedClip
+                {
+                    state = name, clip = clips[i], loop = loop, speed = speed, speedFollowsMovement = followsMovement
+                };
             }
             model.SetActive(true);
 

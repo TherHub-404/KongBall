@@ -4,12 +4,12 @@ namespace KongBall.Bots
 {
     // A bot that plays like somebody rather than like a solver.
     //
-    // Simplified again alongside the spin-attack change: ACTION away from the ball does nothing any
-    // more (push/grab are gone), so the old Tackle mode — steer at the nearest threat to the ball and
-    // hold ACTION — no longer does anything either. Contesting an opponent is now the spin attack's
-    // job (jump while already airborne), which needs its own timing decision a bot doesn't make yet.
-    // Until that exists, the bot only does the one thing it can still affect the game with: chase the
-    // ball and hit it. Team roles and opponent-contesting AI both stay future work.
+    // Two things it can do: chase the ball and hit it (ChaseAndHit), or contest whichever opponent is
+    // closest to beating it there (ContestThreat, via the spin attack — jump, then jump again once
+    // airborne). The old push/grab tackle is gone project-wide (CORE_GAMEPLAY_RESET); this is its
+    // replacement, added once it became clear "the bots don't know how to play any more" meant, in
+    // part, that nothing had ever given them the spin attack a human already had. Team roles — two
+    // bots coordinating instead of both chasing the same ball — stay future work.
     //
     // Runs only where NetPlayer calls it: on the peer holding State Authority, which for a bot is
     // always the master that spawned it. That is also why Random is safe here — a bot is simulated
@@ -18,15 +18,8 @@ namespace KongBall.Bots
     public class BotBrain : MonoBehaviour, IPlayerBrain
     {
         [Header("Movement")]
-        [Tooltip("Top speed as a fraction of a human's. Just under, never over — and only just under: " +
-                 "most of what made the old bot feel fast was the instant direction changes, which " +
-                 "steerRamp now costs it. Cut this too hard and the bot can never close on the ball.")]
+        [Tooltip("Top speed as a fraction of a human's. Just under, never over.")]
         public float topSpeed = 0.92f;
-
-        [Tooltip("Seconds for the steering to swing to a new direction. A thumb is not a step change, " +
-                 "and instant reversals are most of what made the old bot read as a machine even at " +
-                 "the same top speed.")]
-        public float steerRamp = 0.18f;
 
         [Header("Ball approach")]
         [Tooltip("Same range NetPlayer uses to decide ACTION hits the ball. Kept as its own field " +
@@ -38,6 +31,21 @@ namespace KongBall.Bots
                  "sideways into it. Too large and the bot takes a wide, obviously artificial arc.")]
         public float approachOffset = 1.4f;
 
+        [Header("Contesting (spin attack on the biggest threat to the ball)")]
+        [Tooltip("An opponent counts as a threat once they are this much closer to the ball than the " +
+                 "bot itself — close enough that racing straight for the ball would lose, so the bot " +
+                 "intercepts them with the spin attack instead. This is the replacement for the old " +
+                 "push/grab tackle, which the spin attack replaced project-wide (see CORE_GAMEPLAY_RESET " +
+                 "in Bots/AGENTS.md) — bots never got an equivalent until now.")]
+        public float threatMargin = 1.5f;
+        [Tooltip("How close to the threatening opponent before committing to the spin attack.")]
+        public float contestRange = 2.2f;
+        [Tooltip("Delay before switching to a newly-appeared decision — a new threat, or the ball no " +
+                 "longer being one. Reacting in the same tick something changes is the single biggest " +
+                 "\"this is a bot\" tell (Bots/AGENTS.md's own \"Believability\" section names it #4); " +
+                 "never delays actually moving or jumping once committed, only the decision itself.")]
+        public float reactionSeconds = 0.22f;
+
         [Header("Jump")]
         [Tooltip("Ball this high and this near overhead: go up for it.")]
         public float jumpBallHeight = 1.8f;
@@ -47,9 +55,15 @@ namespace KongBall.Bots
         public float hopEverySeconds = 6f;
 
         float _jumpCd;
-        Vector3 _steer;   // the ramped move vector — one advance per tick, never two
         float _hopIn;
         bool _jump;
+        // Fired the grounded jump that starts a contest; the very next tick (now airborne) fires the
+        // second jump press that NetPlayer resolves as the spin attack — same two-press shape a human
+        // double-tapping the button produces, just decided here instead of by a thumb.
+        bool _committedToSpin;
+        NetPlayer _pendingThreat;    // NearestThreat's raw pick this tick, not yet acted on
+        float _pendingFor;          // how long _pendingThreat has been the top candidate, unbroken
+        NetPlayer _committedThreat; // the one actually being contested; sticks until the attempt fires
 
         public bool ConsumeJump()
         {
@@ -69,12 +83,29 @@ namespace KongBall.Bots
             var mc = MatchController.Instance;
             if (mc != null && mc.CurPhase != MatchController.Phase.Playing)
             {
-                _steer = Vector3.zero;
                 _jump = false;
+                _committedToSpin = false;
+                _pendingThreat = null; _pendingFor = 0f; _committedThreat = null;
                 return want;
             }
 
             if (_jumpCd > 0f) _jumpCd -= dt;
+
+            // Reaction delay: a freshly-appeared (or freshly-gone) threat has to stay the answer for
+            // reactionSeconds, unbroken, before the bot actually commits to it — otherwise the switch
+            // happens on the very tick the situation changes, which reads as inhuman regardless of
+            // how good the underlying decision is.
+            var rawThreat = NearestThreat(me, ball);
+            if (rawThreat != _pendingThreat) { _pendingThreat = rawThreat; _pendingFor = 0f; }
+            _pendingFor += dt;
+
+            if (_committedThreat == null && rawThreat != null && _pendingFor >= reactionSeconds)
+                _committedThreat = rawThreat;
+            else if (_committedThreat != null && !_committedThreat.IsStumbled && rawThreat == null && _pendingFor >= reactionSeconds)
+                _committedThreat = null; // the threat picture cleared and stayed clear — stand down
+
+            if (_committedThreat != null) return ContestThreat(me, _committedThreat);
+            _committedToSpin = false; // no live contest; the next one starts clean
             return ChaseAndHit(me, ball, me.transform.position, dt);
         }
 
@@ -82,6 +113,11 @@ namespace KongBall.Bots
         // itself, so that by the time the bot is close enough to hit it, it is already moving toward
         // goal instead of sideways into it — THE BALL IS NEVER POSSESSED, so there is no aim step
         // afterward to correct a bad approach angle.
+        //
+        // No ramp of its own on the move vector any more: NetPlayer's own acceleration curve (added
+        // for the same "a thumb is not a step change" reason this used to exist here) now applies to
+        // every mover, bot included — stacking a second ramp on top just made the bot noticeably
+        // mushier to steer than a human, for no reason once the shared one existed.
         PlayerIntent ChaseAndHit(NetPlayer me, NetBall ball, Vector3 here, float dt)
         {
             var want = default(PlayerIntent);
@@ -92,21 +128,60 @@ namespace KongBall.Bots
             if (towardGoal.sqrMagnitude > 1e-4f) towardGoal.Normalize(); else towardGoal = Flat(me.transform.forward);
             Vector3 approachPoint = ballPos - towardGoal * approachOffset;
 
-            want.Move = Steer(Flat(approachPoint - here), dt);
+            want.Move = Toward(Flat(approachPoint - here));
             MaybeJump(ball, here, dt);
 
             if (Flat(ballPos - here).magnitude <= hitCommitRange) want.Action = true;
             return want;
         }
 
-        // The input ramp. Called exactly once per tick on every path, because two advances in one tick
-        // would quietly halve the ramp it exists to impose.
-        Vector3 Steer(Vector3 dir, float dt)
+        // The opponent most likely to reach the ball before this bot would — the spin attack's
+        // target. Replaces the old push/grab tackle (gone project-wide, see CORE_GAMEPLAY_RESET in
+        // Bots/AGENTS.md); nothing filled in the equivalent for a bot until now, which is plausibly
+        // most of "the bots don't know how to play any more" — a human can contest with the spin
+        // attack and a bot until now simply could not.
+        NetPlayer NearestThreat(NetPlayer me, NetBall ball)
         {
-            Vector3 wish = dir.sqrMagnitude > 0.0625f ? dir.normalized * topSpeed : Vector3.zero;
-            _steer = Vector3.MoveTowards(_steer, wish, topSpeed / Mathf.Max(0.02f, steerRamp) * dt);
-            return _steer;
+            float myDist = Flat(ball.transform.position - me.transform.position).magnitude;
+            NetPlayer best = null; float bestDist = float.MaxValue;
+            foreach (var np in NetPlayer.Live)
+            {
+                if (np == null || np == me || np.NetTeam == me.NetTeam || np.IsStumbled) continue;
+                float d = Flat(ball.transform.position - np.transform.position).magnitude;
+                if (d + threatMargin < myDist && d < bestDist) { bestDist = d; best = np; }
+            }
+            return best;
         }
+
+        // Run at the threat, then jump; the SECOND jump press, fired the next tick once airborne, is
+        // what NetPlayer resolves as the spin attack (see class doc) — the same shape ConsumeJump
+        // already expects from a human double-tapping the button.
+        PlayerIntent ContestThreat(NetPlayer me, NetPlayer threat)
+        {
+            var want = default(PlayerIntent);
+            Vector3 toThreat = Flat(threat.transform.position - me.transform.position);
+            want.Move = Toward(toThreat);
+
+            if (me.Grounded)
+            {
+                if (toThreat.magnitude <= contestRange && _jumpCd <= 0f)
+                {
+                    _jump = true;
+                    _committedToSpin = true;
+                    _jumpCd = jumpCooldown;
+                }
+                else _committedToSpin = false;
+            }
+            else if (_committedToSpin)
+            {
+                _jump = true;
+                _committedToSpin = false; // one attempt per commitment, win or lose
+                _committedThreat = null; // spent; Think() picks a fresh target next tick
+            }
+            return want;
+        }
+
+        Vector3 Toward(Vector3 dir) => dir.sqrMagnitude > 0.0625f ? dir.normalized * topSpeed : Vector3.zero;
 
         void MaybeJump(NetBall ball, Vector3 here, float dt)
         {
