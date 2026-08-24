@@ -41,20 +41,24 @@ namespace KongBall
         [Tooltip("Replaces push/grab entirely: with the ball never possessed, this is now the only way " +
                  "to affect an opponent, and the strong way to hit the ball. One per jump — landing " +
                  "resets it, so it can't be chained in the air.")]
-        public float spinLungeSpeed = 11f;
-        public float spinDuration = 0.35f;
+        public float spinLungeSpeed = 13f;
+        public float spinDuration = 0.4f;
         public float spinHitRange = 1.8f;
         public float spinBallPowerMultiplier = 1.6f;
         public float spinCooldown = 1f;
         [Tooltip("The attacker's own landing recovery, every time a spin attack ends (hit or miss) — " +
                  "committing to a flying kick costs balance, not just a free hit.")]
-        public float spinRecoveryDuration = 1f;
+        public float spinRecoveryDuration = 1.25f;
 
         [Header("Knockback (dealt by the spin attack)")]
         public float pushRange = 1.7f;
         public float pushRadius = 1.3f;
         public float pushForce = 11f;
-        public float stunDuration = 0.9f;
+        // Matches the "stumble" clip's own fall+get-up length (30 frames at 24fps, see FallGuy.glb):
+        // shorter than the clip and control comes back mid-getup, cut off by the crossfade to
+        // idle/run — reported as the fall animation looking "buggato" before the clip had a getup
+        // phase to reach in the first place.
+        public float stunDuration = 1.25f;
 
         [Networked] public int NetTeam { get; set; }        // 0 = Blue, 1 = Red
         [Networked] public bool TeamAssigned { get; set; }  // false until the master hands out a side
@@ -175,30 +179,18 @@ namespace KongBall
             UpdateRing();
             UpdateNameTag();
 
-            // Feedback SFX + camera shake (every client observes the same networked counter, so a
-            // hit reads and feels the same on every screen it is visible from — not only on whoever
-            // threw it). Shake scales with proximity to THIS client's own camera: a hit across the
-            // pitch is a whisper, one at your feet is felt.
-            var cam = Camera.main != null ? Camera.main.GetComponent<MatchCamera>() : null;
-
+            // Feedback SFX (every client observes the same networked counter, so a hit reads and
+            // feels the same on every screen it is visible from — not only on whoever threw it).
+            // Camera shake used to live here too; removed on request (felt bad), hitstop stays.
             if (KickSeq != _sfxKickSeq)
             {
                 _sfxKickSeq = KickSeq;
                 if (SfxManager.Instance != null) SfxManager.Instance.PlayKick();
-                // Distance to where the camera is actually LOOKING, not to the camera rig itself —
-                // the rig sits ~backDistance away from its target at all times, so measuring against
-                // transform.position never read a close hit as close (reported: the shake barely
-                // seemed to fire even for the local player's own hits).
-                if (cam != null) cam.Shake(Mathf.Clamp01(1f - Vector3.Distance(transform.position, cam.FocusPosition) / 14f));
             }
             bool st = IsStumbled;
             if (st && !_wasStumbled)
             {
                 if (SfxManager.Instance != null) SfxManager.Instance.PlayImpact();
-                // Same proximity-scaled shake the ball hit gets, now also for landing a spin attack on
-                // an opponent — that already had the impact SFX but nothing on camera, so it read as
-                // noticeably less "felt" than hitting the ball did.
-                if (cam != null) cam.Shake(Mathf.Clamp01(1f - Vector3.Distance(transform.position, cam.FocusPosition) / 14f));
                 Hitstop.Trigger(0.08f);
             }
             _wasStumbled = st;
@@ -328,26 +320,36 @@ namespace KongBall
             if (_grounded) _usedSpin = false; // landed: the next jump gets a fresh spin attack
 
             // --- Normal control ---
-            Vector3 mdir = want.Move;
-
-            float inMag = Mathf.Clamp01(mdir.magnitude);
-            Vector3 wish = (inMag > 0.15f ? mdir.normalized : Vector3.zero) * moveSpeed * inMag;
-            bool speedingUp = wish.sqrMagnitude > _horizVel.sqrMagnitude;
-
-            // Progressive, not linear: a held direction builds up to full acceleration over
-            // rampUpTime instead of applying it from the first tick, so reaching moveSpeed reads as
-            // a run-up rather than a snap. Resets the instant the stick releases or the player is
-            // already fast enough not to need it, so letting go and pressing again re-triggers it.
-            if (inMag > 0.15f && speedingUp) _accelT += dt; else _accelT = 0f;
-            float rampMul = speedingUp ? Mathf.Lerp(rampStartMul, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(_accelT / rampUpTime))) : 1f;
-
-            float rate = (speedingUp ? acceleration * rampMul : deceleration) * (_grounded ? 1f : airControl);
-            _horizVel = Vector3.MoveTowards(_horizVel, wish, rate * dt);
-
-            if (inMag > 0.15f)
+            // Skipped for the duration of an active spin attack: this block used to run every tick
+            // regardless, which meant StartSpin's committed lunge velocity got overwritten by this
+            // same deceleration-toward-`wish` math on the very next tick — a held direction dragged
+            // it back toward moveSpeed, and NO direction (stick released mid-air) decayed almost the
+            // entire lunge away before spinDuration even finished. Reported as "the double jump
+            // doesn't go far enough forward"; the class comment already claimed the lunge "commits to
+            // a line rather than steering mid-air" — this is what actually makes that true.
+            if (_spinFor <= 0f)
             {
-                Quaternion target = Quaternion.LookRotation(mdir.normalized, Vector3.up);
-                transform.rotation = Quaternion.RotateTowards(transform.rotation, target, turnSpeed * dt);
+                Vector3 mdir = want.Move;
+
+                float inMag = Mathf.Clamp01(mdir.magnitude);
+                Vector3 wish = (inMag > 0.15f ? mdir.normalized : Vector3.zero) * moveSpeed * inMag;
+                bool speedingUp = wish.sqrMagnitude > _horizVel.sqrMagnitude;
+
+                // Progressive, not linear: a held direction builds up to full acceleration over
+                // rampUpTime instead of applying it from the first tick, so reaching moveSpeed reads as
+                // a run-up rather than a snap. Resets the instant the stick releases or the player is
+                // already fast enough not to need it, so letting go and pressing again re-triggers it.
+                if (inMag > 0.15f && speedingUp) _accelT += dt; else _accelT = 0f;
+                float rampMul = speedingUp ? Mathf.Lerp(rampStartMul, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(_accelT / rampUpTime))) : 1f;
+
+                float rate = (speedingUp ? acceleration * rampMul : deceleration) * (_grounded ? 1f : airControl);
+                _horizVel = Vector3.MoveTowards(_horizVel, wish, rate * dt);
+
+                if (inMag > 0.15f)
+                {
+                    Quaternion target = Quaternion.LookRotation(mdir.normalized, Vector3.up);
+                    transform.rotation = Quaternion.RotateTowards(transform.rotation, target, turnSpeed * dt);
+                }
             }
 
             // Jump, or — if already airborne and the one spin attack for this jump hasn't fired yet —
