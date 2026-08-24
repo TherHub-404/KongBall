@@ -5,18 +5,18 @@ using UnityEngine.Playables;
 
 namespace KongBall
 {
-    // Runtime skeletal animation blending for a RIGGED character, built entirely from a PlayableGraph
-    // — no AnimatorController asset, no Editor authoring, matching AGENTS.md #1 ("nobody here opens
-    // the Unity Editor"). This is scaffolding: nothing attaches it to a prefab yet, and the clip list
-    // is empty until a real rigged model exists (see the PR — no ripped or unlicensed model goes in
-    // here, ever). It reads the exact same NetPlayer state MonkeyAnimator.cs already reads for the
-    // current rig-less mesh; once a real rig is wired in, the two can live side by side per model, or
-    // this one can replace MonkeyAnimator on the day the real model ships.
+    // Runtime skeletal animation blending for the rigged FallGuy character, built entirely from a
+    // PlayableGraph — no AnimatorController asset, no Editor authoring, matching AGENTS.md #1.
+    // PlayerVisual.cs attaches this to the loaded model and fills `clips` from every AnimationClip
+    // shipped inside Resources/Player/FallGuy.glb — the seven expected states are idle, run, jump,
+    // fall, hit, stumble, spin.
     //
-    // Whoever plugs in the first clip set: assign the six entries below (idle, run, jump, fall, hit,
-    // stumble) in code or via the inspector on whatever prefab ends up carrying this, and the
-    // crossfade/state logic already works — nothing here has been felt on a phone, because there is
-    // nothing to feel it with yet.
+    // Jump/fall/run are read off the MODEL'S OWN transform position, not off NetPlayer's private
+    // _grounded/_vY: those two are only ever written by the peer simulating that player (the state
+    // authority), so on every other client watching a remote player they would just sit at their
+    // default forever. The replicated position is the one thing every client actually has, so
+    // velocity is estimated from its own frame-to-frame delta instead — noisier than reading the real
+    // value, but correct on every screen this plays on, not only the owner's.
     public class RigAnimator : MonoBehaviour
     {
         [System.Serializable]
@@ -50,6 +50,12 @@ namespace KongBall
         public float airThreshold = 1.3f;
         public float runRefSpeed = 6f;
 
+        [Header("Landing squash — presentation only, same juice family as Hitstop/MatchCamera.Shake")]
+        [Tooltip("How much the model compresses vertically the instant it lands, easing back to " +
+                 "normal over squashDuration. 0 disables it.")]
+        public float squashAmount = 0.22f;
+        public float squashDuration = 0.16f;
+
         NetPlayer _player;
         Animator _animatorTarget;   // required by AnimationPlayableOutput as the bind target; carries
                                      // no RuntimeAnimatorController — the graph below is the real driver
@@ -62,6 +68,16 @@ namespace KongBall
         int _lastKickSeq;
         Vector3 _lastPos;
         bool _graphValid;
+
+        // Captured lazily on the first Update rather than in Awake: PlayerVisual sets this model's
+        // localScale to fit the CharacterController's height AFTER AddComponent<RigAnimator>() (and
+        // therefore after Awake runs), so an Awake-time capture would freeze in the pre-fit scale —
+        // the squash would then permanently override the real fitted size instead of riding on top of
+        // it. Every frame re-derives from this cached base, never accumulates (AGENTS.md #8).
+        Vector3 _baseScale;
+        bool _baseScaleCaptured;
+        bool _prevAirborne;
+        float _squashT = -1f;   // seconds since the last landing; -1 = inactive
 
         void Awake()
         {
@@ -115,12 +131,33 @@ namespace KongBall
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
 
+            if (!_baseScaleCaptured) { _baseScale = transform.localScale; _baseScaleCaptured = true; }
+
             Vector3 pos = _player.transform.position;
             Vector3 vel = (pos - _lastPos) / dt;
             _lastPos = pos;
 
             float hSpeed = new Vector2(vel.x, vel.z).magnitude;
             bool airborne = Mathf.Abs(vel.y) > airThreshold;
+
+            // Landing: jump/fall had nothing to sell the moment the model actually touches down, the
+            // same gap hitstop/shake used to fill on a hit. A brief squash-and-stretch on the model's
+            // own scale needs no new clip and cannot desync anything — it never touches the
+            // CharacterController, only how the mesh looks for squashDuration.
+            if (_prevAirborne && !airborne) _squashT = 0f;
+            _prevAirborne = airborne;
+
+            if (_squashT >= 0f)
+            {
+                _squashT += dt;
+                if (_squashT >= squashDuration) { _squashT = -1f; transform.localScale = _baseScale; }
+                else
+                {
+                    float squash = squashAmount * (1f - _squashT / squashDuration); // eases to 0
+                    transform.localScale = Vector3.Scale(_baseScale,
+                        new Vector3(1f + squash * 0.5f, 1f - squash, 1f + squash * 0.5f));
+                }
+            }
 
             if (_player.KickSeq != _lastKickSeq) { _lastKickSeq = _player.KickSeq; CrossFadeTo("hit"); }
             else if (_player.IsStumbled) CrossFadeTo("stumble");
