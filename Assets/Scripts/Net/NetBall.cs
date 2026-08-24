@@ -209,7 +209,10 @@ namespace KongBall
             // Impact pop: purely cosmetic, every client, driven by the replicated counter rather than
             // by simulating the hit locally — it must read the same instant on every screen a hit is
             // visible on, not whenever that client happens to also be the one who threw the punch.
-            if (HitSeq != _seenHitSeq) { _seenHitSeq = HitSeq; _hitPulse = 1f; }
+            // Hitstop rides the same counter: HitSeq only bumps on a real, landed ball impact (unlike
+            // NetPlayer.KickSeq, which now bumps on every ACTION press whether or not it touched
+            // anything) — exactly the "did this actually connect" signal the freeze should key off.
+            if (HitSeq != _seenHitSeq) { _seenHitSeq = HitSeq; _hitPulse = 1f; Hitstop.Trigger(0.06f); }
             _hitPulse = Mathf.MoveTowards(_hitPulse, 0f, Time.deltaTime * 6f);
             _visual.localScale = _visualBaseScale * (1f + _hitPulse * 0.18f);
         }

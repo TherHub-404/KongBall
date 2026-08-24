@@ -179,19 +179,28 @@ namespace KongBall
             // hit reads and feels the same on every screen it is visible from — not only on whoever
             // threw it). Shake scales with proximity to THIS client's own camera: a hit across the
             // pitch is a whisper, one at your feet is felt.
+            var cam = Camera.main != null ? Camera.main.GetComponent<MatchCamera>() : null;
+
             if (KickSeq != _sfxKickSeq)
             {
                 _sfxKickSeq = KickSeq;
                 if (SfxManager.Instance != null) SfxManager.Instance.PlayKick();
-                var cam = Camera.main != null ? Camera.main.GetComponent<MatchCamera>() : null;
-                if (cam != null)
-                {
-                    float d = Vector3.Distance(transform.position, cam.transform.position);
-                    cam.Shake(Mathf.Clamp01(1f - d / 14f));
-                }
+                // Distance to where the camera is actually LOOKING, not to the camera rig itself —
+                // the rig sits ~backDistance away from its target at all times, so measuring against
+                // transform.position never read a close hit as close (reported: the shake barely
+                // seemed to fire even for the local player's own hits).
+                if (cam != null) cam.Shake(Mathf.Clamp01(1f - Vector3.Distance(transform.position, cam.FocusPosition) / 14f));
             }
             bool st = IsStumbled;
-            if (st && !_wasStumbled && SfxManager.Instance != null) SfxManager.Instance.PlayImpact();
+            if (st && !_wasStumbled)
+            {
+                if (SfxManager.Instance != null) SfxManager.Instance.PlayImpact();
+                // Same proximity-scaled shake the ball hit gets, now also for landing a spin attack on
+                // an opponent — that already had the impact SFX but nothing on camera, so it read as
+                // noticeably less "felt" than hitting the ball did.
+                if (cam != null) cam.Shake(Mathf.Clamp01(1f - Vector3.Distance(transform.position, cam.FocusPosition) / 14f));
+                Hitstop.Trigger(0.08f);
+            }
             _wasStumbled = st;
 
             if (HasStateAuthority && _brain == null && !_camReady) SetupCamera();
