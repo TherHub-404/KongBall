@@ -322,8 +322,11 @@ namespace KongBall
 
             // Objects already in the room arrive asynchronously after joining. Without this wait, a
             // client that becomes master before the existing ball has replicated to it would decide
-            // the ball is missing and spawn a second one.
-            if (_settleUntil <= 0f) _settleUntil = Time.time + settleSeconds;
+            // the ball is missing and spawn a second one. A practice room is invisible and never
+            // holds a second peer, so there is nothing to race against — phone-test feedback was
+            // "why does practice load every time", and this wait was the reason.
+            float settle = Mode == MatchMode.Practice ? 0f : settleSeconds;
+            if (_settleUntil <= 0f) _settleUntil = Time.time + settle;
             if (Time.time < _settleUntil) return;
 
             if (ballPrefab != null && NetBall.Instance == null)
@@ -407,8 +410,12 @@ namespace KongBall
                 _lastSeated = -1;
 
                 // The corner button, for as long as there is a match to leave. It goes at the final
-                // whistle, so the result screen is not covered by a way out of a match already over.
-                if (mc != null && mc.CurPhase != MatchController.Phase.Finished) MatchMenu.Show(Forfeit);
+                // whistle, so the result screen is not covered by a way out of a match already over —
+                // except in practice, which never really "ends": RESET (top-right) stays reachable so
+                // a session can restart without a full reconnect.
+                bool practice = Mode == MatchMode.Practice;
+                bool matchOver = mc != null && mc.CurPhase == MatchController.Phase.Finished;
+                if (!matchOver || practice) MatchMenu.Show(Forfeit, practice);
                 else MatchMenu.Hide();
                 return;
             }

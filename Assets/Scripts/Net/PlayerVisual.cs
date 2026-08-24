@@ -46,12 +46,23 @@ namespace KongBall
             // #10 on the arena that sat mis-scaled for months because nobody measured it).
             var cc = GetComponentInParent<CharacterController>();
             Bounds b = WorldBounds(model);
+            float floorWorldY = 0f;
+            bool hasFloor = false;
             if (cc != null && b.size.y > 1e-4f)
             {
                 model.transform.localScale = Vector3.one * (cc.height / b.size.y);
                 b = WorldBounds(model);
-                float floorWorldY = cc.transform.position.y + cc.center.y - cc.height * 0.5f;
+                floorWorldY = cc.transform.position.y + cc.center.y - cc.height * 0.5f;
                 model.transform.position += new Vector3(0f, floorWorldY - b.min.y, 0f);
+                hasFloor = true;
+            }
+
+            if (hasFloor)
+            {
+                var dust = new GameObject("RunDustAnchor");
+                dust.transform.SetParent(transform, false);
+                dust.transform.position = new Vector3(cc.transform.position.x, floorWorldY + 0.05f, cc.transform.position.z);
+                dust.AddComponent<RunDust>();
             }
         }
 

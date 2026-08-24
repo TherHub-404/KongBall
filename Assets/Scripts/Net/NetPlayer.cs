@@ -15,6 +15,12 @@ namespace KongBall
         public float deceleration = 65f;
         public float turnSpeed = 720f;
         public float airControl = 0.55f;
+        [Tooltip("How long a held direction takes to reach full acceleration. Phone-test feedback: " +
+                 "the old flat-rate ramp read as linear/instant, not a build-up to a standard speed.")]
+        public float rampUpTime = 0.35f;
+        [Tooltip("Acceleration multiplier at the very start of a held direction (t=0), before " +
+                 "rampUpTime's smoothstep brings it up to 1. Not 0 — a dead first tick reads as lag.")]
+        public float rampStartMul = 0.3f;
 
         [Header("Jump / gravity")]
         public float jumpVelocity = 8.5f;
@@ -22,6 +28,12 @@ namespace KongBall
         public float fallMultiplier = 1.7f;
         public float coyoteTime = 0.12f;
         public float jumpBufferTime = 0.12f;
+        [Tooltip("Phone-test feedback: jump was spammable. Each ground jump before jumpFatigueRecover " +
+                 "has passed since the last one adds a fatigue stack, down to jumpFatigueMinMul at " +
+                 "jumpFatigueMaxStacks; resting that long resets to full power.")]
+        public int jumpFatigueMaxStacks = 3;
+        public float jumpFatigueMinMul = 0.4f;
+        public float jumpFatigueRecover = 2.5f;
 
         [Header("Hit (ACTION on the ball)")]
         [Tooltip("How close the ball has to be for ACTION to hit it. Out of this range, ACTION does " +
@@ -57,6 +69,10 @@ namespace KongBall
         // Presentation read-only helpers.
         public bool IsStumbled => Runner != null && !StumbleUntil.ExpiredOrNotRunning(Runner);
         public bool IsSpinning => Runner != null && !SpinUntil.ExpiredOrNotRunning(Runner);
+        public bool Grounded => _grounded;
+        // 0..1+, current horizontal speed as a fraction of moveSpeed — RunDust reads this to decide
+        // "full regime" rather than any speed above zero.
+        public float SpeedFraction01 => moveSpeed > 0.01f ? _horizVel.magnitude / moveSpeed : 0f;
 
         TickTimer _hitCd;
         TickTimer _spinCd;
@@ -107,6 +123,9 @@ namespace KongBall
         float _coyote;       // coyote timer
         float _jumpBuf;      // jump buffer timer
         bool _grounded;
+        float _accelT;              // seconds spent accelerating in the current held direction
+        int _jumpFatigueStacks;     // consecutive ground jumps without a full rest
+        float _timeSinceLastJump = 999f;   // large at spawn: the very first jump is always full power
 
         static readonly Color BlueColor = new Color(0.20f, 0.55f, 1.00f);
         static readonly Color RedColor = new Color(1.00f, 0.30f, 0.25f);
@@ -309,7 +328,16 @@ namespace KongBall
 
             float inMag = Mathf.Clamp01(mdir.magnitude);
             Vector3 wish = (inMag > 0.15f ? mdir.normalized : Vector3.zero) * moveSpeed * inMag;
-            float rate = (wish.sqrMagnitude > _horizVel.sqrMagnitude ? acceleration : deceleration) * (_grounded ? 1f : airControl);
+            bool speedingUp = wish.sqrMagnitude > _horizVel.sqrMagnitude;
+
+            // Progressive, not linear: a held direction builds up to full acceleration over
+            // rampUpTime instead of applying it from the first tick, so reaching moveSpeed reads as
+            // a run-up rather than a snap. Resets the instant the stick releases or the player is
+            // already fast enough not to need it, so letting go and pressing again re-triggers it.
+            if (inMag > 0.15f && speedingUp) _accelT += dt; else _accelT = 0f;
+            float rampMul = speedingUp ? Mathf.Lerp(rampStartMul, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(_accelT / rampUpTime))) : 1f;
+
+            float rate = (speedingUp ? acceleration * rampMul : deceleration) * (_grounded ? 1f : airControl);
             _horizVel = Vector3.MoveTowards(_horizVel, wish, rate * dt);
 
             if (inMag > 0.15f)
@@ -324,10 +352,19 @@ namespace KongBall
             if (jumpPressed) _jumpBuf = jumpBufferTime;
             _jumpBuf -= dt;
             _coyote = _grounded ? coyoteTime : _coyote - dt;
+            _timeSinceLastJump += dt;
             bool canGroundJump = _jumpBuf > 0f && _coyote > 0f;
             if (canGroundJump)
             {
-                _vY = jumpVelocity; _jumpBuf = 0f; _coyote = 0f; _grounded = false;
+                // Anti-spam, from a phone test: full power on the first jump (or after resting
+                // jumpFatigueRecover seconds), weaker on each one that follows too soon, down to
+                // jumpFatigueMinMul by jumpFatigueMaxStacks — bunny-hopping tires the legs out.
+                if (_timeSinceLastJump >= jumpFatigueRecover) _jumpFatigueStacks = 0;
+                float fatigueMul = Mathf.Lerp(1f, jumpFatigueMinMul, (float)_jumpFatigueStacks / jumpFatigueMaxStacks);
+                _vY = jumpVelocity * fatigueMul;
+                _jumpFatigueStacks = Mathf.Min(_jumpFatigueStacks + 1, jumpFatigueMaxStacks);
+                _timeSinceLastJump = 0f;
+                _jumpBuf = 0f; _coyote = 0f; _grounded = false;
             }
             else if (jumpPressed && !_grounded && !_usedSpin && _spinCd.ExpiredOrNotRunning(Runner))
             {
@@ -524,6 +561,7 @@ namespace KongBall
             _horizVel = Vector3.zero; _vY = 0f;
             _grounded = false;   // let the next tick re-detect it instead of assuming the old value
             _usedSpin = false; _spinFor = 0f;
+            _accelT = 0f; _jumpFatigueStacks = 0; _timeSinceLastJump = 999f;
             StumbleUntil = default;
         }
 

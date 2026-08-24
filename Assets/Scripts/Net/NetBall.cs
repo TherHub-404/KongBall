@@ -108,7 +108,11 @@ namespace KongBall
             {
                 _ballCol.sharedMaterial = new PhysicsMaterial("BallPhys")
                 {
-                    bounciness = 0.65f,
+                    // Was 0.65 with bounceCombine Maximum, which governs EVERY collision this ball
+                    // has, not just a deliberate Hit — a wall (or anything with its own material) was
+                    // always bounced at least this bouncy regardless of what it's made of. Felt on a
+                    // phone as walls sending the ball flying. Not retuned beyond "clearly lower" yet.
+                    bounciness = 0.4f,
                     dynamicFriction = 0.4f,
                     staticFriction = 0.4f,
                     frictionCombine = PhysicsMaterialCombine.Average,

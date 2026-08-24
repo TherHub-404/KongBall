@@ -32,6 +32,7 @@ namespace KongBall
             var screen = go.AddComponent<ConnectingScreen>();
             screen.Build();
             screen.SetMessage(message);
+            UiSfx.Loading();
             return screen;
         }
 

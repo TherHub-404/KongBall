@@ -207,6 +207,8 @@ namespace KongBall
             hl.color = new Color(1f, 1f, 1f, 0.30f);
             hl.raycastTarget = false;
 
+            hit.gameObject.AddComponent<ToyButtonFeedback>();
+
             return hit;
         }
 
