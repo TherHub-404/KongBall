@@ -11,7 +11,7 @@ namespace KongBall
     {
         // "stumble" plays once — a fall-backward-then-get-up clip timed to NetPlayer.stunDuration —
         // not a continuous loop, so it can hold its final (standing) pose until IsStumbled clears.
-        static readonly string[] LoopStates = { "idle", "walk", "run", "fall", "spin" };
+        static readonly string[] LoopStates = { "idle", "walk", "run", "fall", "spin", "celebrate" };
 
         void Awake()
         {

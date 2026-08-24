@@ -13,14 +13,15 @@ namespace KongBall
         public enum Phase { Waiting, Countdown, Playing, GoalPause, Finished }
 
         [Header("Rules")]
-        // Three minutes, or the first team to three goals — whichever comes first.
+        // Two minutes, or the first team to three goals — whichever comes first. A tie at the final
+        // whistle doesn't end the match flat any more: see GoldenGoal below.
         //
         // The prefab carries these values and overrides the defaults here, so both are kept in step:
         // `endless` was not in the prefab at all (the field was added to the script after the prefab
         // was last saved), which meant the code default alone decided it. It is written explicitly
         // now, so there is no question about which of the two wins.
         public bool endless = false;        // true = no timer and no win, for playtesting alone
-        public float matchDuration = 180f;
+        public float matchDuration = 120f;
         public int scoreLimit = 3;
         public float countdownDuration = 3f;
         public float goalPauseDuration = 2f;
@@ -41,6 +42,10 @@ namespace KongBall
         [Networked] public bool ByForfeit { get; set; }    // the win was awarded, not played out
         [Networked] public bool WithBots { get; set; }     // this match was SET UP with bots on the pitch
         [Networked] public int HumanSeats { get; set; }    // of those seats, how many a person must fill
+        // Set once, the instant time runs out on a tie, and never cleared until the next Spawned()/
+        // ResetMatch(): the timer stops counting down (Playing keeps running otherwise, unpaused) and
+        // the NEXT goal — whoever's — ends the match, win or lose, no more scoreLimit race to reach.
+        [Networked] public bool GoldenGoal { get; set; }
 
         public static MatchController Instance;
         public Phase CurPhase => (Phase)PhaseId;
@@ -80,7 +85,7 @@ namespace KongBall
 
             if (HasStateAuthority)
             {
-                ScoreBlue = 0; ScoreRed = 0; Winner = -1;
+                ScoreBlue = 0; ScoreRed = 0; Winner = -1; GoldenGoal = false;
                 MatchTime = matchDuration;
                 // Published so every client can show "2/4" without knowing how the match was started.
                 // Bodies, not humans: a practice match holds one human and two players.
@@ -121,16 +126,27 @@ namespace KongBall
                     break;
                 case Phase.Playing:
                     if (TeamAbandoned()) break;
-                    if (!endless)
+                    // Frozen once GoldenGoal starts: the clock isn't what ends a tied match any
+                    // more, the next goal is, so there is nothing left for it to count down to.
+                    if (!endless && !GoldenGoal)
                     {
                         MatchTime -= dt;
-                        if (MatchTime <= 0f) { MatchTime = 0f; Finish(); }
+                        if (MatchTime <= 0f)
+                        {
+                            MatchTime = 0f;
+                            // Only a TIE turns into golden goal — someone already ahead when the
+                            // clock runs out has already won, same as before this existed.
+                            if (ScoreBlue == ScoreRed) GoldenGoal = true; else Finish();
+                        }
                     }
                     break;
                 case Phase.GoalPause:
                     if (TeamAbandoned()) break;
                     PhaseTimer -= dt;
-                    if (PhaseTimer <= 0f) Kickoff();
+                    // The golden goal itself still gets the full GOAL!/zoom/celebration beat — it is
+                    // the one goal in the match that most deserves it — just ending the match instead
+                    // of kicking off again once that beat is over.
+                    if (PhaseTimer <= 0f) { if (GoldenGoal) Finish(); else Kickoff(); }
                     break;
                 case Phase.Finished:
                     break;
@@ -253,7 +269,10 @@ namespace KongBall
             // The ball recentres itself the moment it detects the goal (NetBall.ScoreGoal), so it
             // cannot re-trigger while we switch phase — nothing to reset from here.
 
-            if (!endless && (ScoreBlue >= scoreLimit || ScoreRed >= scoreLimit)) { Finish(); return; }
+            // Skipped during golden goal: this goal ends the match regardless of scoreLimit, and it
+            // always gets the GoalPause celebration first (see FixedUpdateNetwork) rather than the
+            // instant cut a scoreLimit goal gets normally.
+            if (!GoldenGoal && !endless && (ScoreBlue >= scoreLimit || ScoreRed >= scoreLimit)) { Finish(); return; }
             PhaseId = (int)Phase.GoalPause;
             PhaseTimer = goalPauseDuration;
         }
@@ -270,7 +289,7 @@ namespace KongBall
         public void ResetMatch()
         {
             if (!HasStateAuthority) return;
-            ScoreBlue = 0; ScoreRed = 0; Winner = -1; ByForfeit = false;
+            ScoreBlue = 0; ScoreRed = 0; Winner = -1; ByForfeit = false; GoldenGoal = false;
             // Without this, MatchTime stays at whatever it decayed to (often 0, from the very match
             // this button is meant to restart) — Kickoff() below sets Phase back to Countdown, but
             // the very next Playing tick would see MatchTime <= 0 and call Finish() again immediately.
