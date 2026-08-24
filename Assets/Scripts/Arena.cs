@@ -70,14 +70,21 @@ namespace KongBall
         // and the ball has to be judged in exactly that hole. Two copies of "where the goal is" is
         // one copy too many.
         public static readonly float GoalLineX = HalfX - 1.8f;   // x the ball must cross to score
-        public const float GoalHalfZ = 3.4f;                     // goal mouth half-width
-        public const float GoalHeight = 3f;                      // above this it is over the bar
+        // Lorenzo: "facciamo le porte più grandi." GoalVis_L/R in NetMatch.unity carry the visual
+        // frame (GoalModel.glb) at scale 4 to match — the two used to disagree already: the model
+        // measures 0.9987/0.5934 m half-extent (X/Y) at scale 1 (`.github/scripts` has no goal-model
+        // measuring script yet, done by hand the same way arena_bordo.py measures Arena.glb), which
+        // at the OLD scale 3 put the visual mouth at 6.0 m wide / a crossbar at 3.08 m — already
+        // narrower than the 6.8 m the wall's hole actually left open. Both now come from the same
+        // scale-4 measurement, so the hole the ball can fly through matches the frame drawn around it.
+        public const float GoalHalfZ = 3.99f;                    // goal mouth half-width
+        public const float GoalHeight = 3.67f;                   // above this it is over the bar
 
         // Where the wall stops so the ball can reach the goal. Matches the OUTER face of the goal
         // pocket's side walls, not the mouth between them: overlapping the pocket by a few
         // centimetres costs nothing, and a gap between wall and pocket is a hole the ball leaves
         // through once every hundred matches, which is the worst kind of bug to be told about.
-        public const float GoalMouthHalfZ = 3.5f;
+        public const float GoalMouthHalfZ = 4.09f;
 
         // Distance from the centre to the touchline in the direction of (x, z). Reads the quadrant
         // table with the direction folded into the first quadrant, so the mirroring costs nothing.
