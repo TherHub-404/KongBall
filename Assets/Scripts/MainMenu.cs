@@ -209,22 +209,23 @@ namespace KongBall
         {
             _modes = NewPanel("Modes");
 
-            // Side by side rather than stacked: three buttons in a column reached high enough to meet
-            // the character's feet on a tall screen, and two choices read better as a pair anyway.
-            Button(_modes.transform, "1 vs 1", -150f, 180f, Primary, Color.white,
+            // Three across instead of two, same row/height as before: INDIETRO must always be the
+            // one thing alone at the bottom, centred and smaller (every screen does this the same
+            // way now — see BuildFriends/BuildWaiting), which meant ALLENAMENTO had to move up
+            // instead of sharing that row. Widening the row sideways costs no NEW vertical space —
+            // the pair above already cleared the character's feet by only ~30 canvas units on a
+            // 19.5:9 phone (found by simulation once already), and a second row would have re-run
+            // into that; three narrower buttons on the SAME row do not.
+            Button(_modes.transform, "1 vs 1", -260f, 180f, Primary, Color.white,
                    () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.OneVsOne)),
-                   280f, 88f, fromBottom: true);
-            Button(_modes.transform, "2 vs 2", 150f, 180f, Primary, Color.white,
+                   230f, 88f, fromBottom: true);
+            Button(_modes.transform, "2 vs 2", 0f, 180f, Primary, Color.white,
                    () => Launch(() => NetLauncher.Instance.StartQuickMatch(MatchMode.TwoVsTwo)),
-                   280f, 88f, fromBottom: true);
-            // Practice sits BESIDE the way back rather than under the pair, and that is a measured
-            // decision, not a taste one: the pair above already clears the character's feet by only
-            // ~30 canvas units on a 19.5:9 phone, so a third full-width row would have run into them
-            // — the same collision that was found by simulation once already.
-            Button(_modes.transform, "INDIETRO", -170f, 72f, Secondary, Color.white,
-                   GoHome, 300f, 56f, fromBottom: true);
-            Button(_modes.transform, "ALLENAMENTO", 170f, 72f, Primary, Color.white,
-                   () => Launch(() => NetLauncher.Instance.StartPractice()), 300f, 56f, fromBottom: true);
+                   230f, 88f, fromBottom: true);
+            Button(_modes.transform, "ALLENAMENTO", 260f, 180f, Primary, Color.white,
+                   () => Launch(() => NetLauncher.Instance.StartPractice()), 230f, 88f, fromBottom: true);
+            Button(_modes.transform, "INDIETRO", 0f, 72f, Secondary, Color.white,
+                   GoHome, 220f, 48f, fromBottom: true, isBack: true);
         }
 
         void BuildFriends()
@@ -254,7 +255,7 @@ namespace KongBall
                 Ui.Place(_hint.rectTransform, 0f, -132f, 900f, 40f);
             }
 
-            Button(_friends.transform, "INDIETRO", 0f, -245f, Secondary, Color.white, GoHome, 320f, 56f);
+            Button(_friends.transform, "INDIETRO", 0f, -245f, Secondary, Color.white, GoHome, 320f, 56f, isBack: true);
         }
 
         void BuildWaiting()
@@ -291,7 +292,7 @@ namespace KongBall
             }
 
             Button(_waiting.transform, "ABBANDONA", 0f, -240f, Secondary, Color.white,
-                   () => { var a = _onAbandon; _onAbandon = null; a?.Invoke(); }, 340f, 64f);
+                   () => { var a = _onAbandon; _onAbandon = null; a?.Invoke(); }, 340f, 64f, isBack: true);
         }
 
         void Only(GameObject panel)
@@ -373,7 +374,7 @@ namespace KongBall
         // returns the invisible full-size hit target; everything that actually draws is a child of it.
         void Button(Transform parent, string label, float x, float y, Color fill, Color ink,
                     UnityEngine.Events.UnityAction onClick, float width = 520f, float height = 88f,
-                    bool fromBottom = false)
+                    bool fromBottom = false, bool isBack = false)
         {
             var hit = Ui.ToyButton("Btn_" + label, parent, width, height, fill);
             if (fromBottom) Ui.PlaceFromBottom(hit.rectTransform, x, y, width, height);
@@ -381,6 +382,8 @@ namespace KongBall
 
             var btn = hit.gameObject.AddComponent<Button>();
             btn.targetGraphic = hit;
+            // "avanti"/"indietro": every screen transition in this menu is one or the other.
+            btn.onClick.AddListener(isBack ? UiSfx.Back : UiSfx.Open);
             btn.onClick.AddListener(onClick);
 
             var t = Ui.NewText("Text", hit.transform, 34);

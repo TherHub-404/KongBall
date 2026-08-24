@@ -27,16 +27,25 @@ namespace KongBall
         static MatchMenu _current;
 
         GameObject _confirm;
+        GameObject _reset;
         System.Action _onForfeit;
 
-        // Idempotent: the launcher calls this every frame the match is live.
-        public static void Show(System.Action onForfeit)
+        // Idempotent: the launcher calls this every frame the match is live. showReset is practice
+        // mode only — a training session never really "ends" the way a real match does, so it keeps
+        // offering a way to restart even once MatchController reaches Finished (see NetLauncher).
+        public static void Show(System.Action onForfeit, bool showReset = false)
         {
-            if (_current != null) { _current._onForfeit = onForfeit; return; }
+            if (_current != null)
+            {
+                _current._onForfeit = onForfeit;
+                if (_current._reset != null) _current._reset.SetActive(showReset);
+                return;
+            }
             var go = new GameObject("MatchMenu");
             _current = go.AddComponent<MatchMenu>();
             _current._onForfeit = onForfeit;
             _current.Build();
+            if (_current._reset != null) _current._reset.SetActive(showReset);
         }
 
         public static void Hide()
@@ -74,6 +83,31 @@ namespace KongBall
             if (label != null) { label.text = "MENU"; label.color = Color.white; Ui.Stretch(label.rectTransform); }
 
             BuildConfirm();
+            BuildReset();
+        }
+
+        // Practice-only, top-right — the one free corner MENU doesn't already occupy. Restarts the
+        // match from kickoff without leaving the room (MatchController.ResetMatch), for repeating a
+        // scenario without a full reconnect. Starts inactive; MatchMenu.Show flips it per Mode.
+        void BuildReset()
+        {
+            var open = Ui.NewImage("Reset", transform);
+            open.color = Quiet;
+            var rt = open.rectTransform;
+            rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.sizeDelta = new Vector2(104f, 60f);
+            rt.anchoredPosition = new Vector2(-26f, -26f);
+
+            var btn = open.gameObject.AddComponent<Button>();
+            btn.targetGraphic = open;
+            btn.onClick.AddListener(() => MatchController.Instance?.ResetMatch());
+
+            var label = Ui.NewText("Text", open.transform, 22);
+            if (label != null) { label.text = "RESET"; label.color = Color.white; Ui.Stretch(label.rectTransform); }
+
+            _reset = open.gameObject;
+            _reset.SetActive(false);
         }
 
         void BuildConfirm()

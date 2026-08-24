@@ -264,6 +264,16 @@ namespace KongBall
             StartCountdown();
         }
 
+        // Practice-only "RESET" button (MatchMenu): restart the match from kickoff without leaving
+        // the room. State-authority-gated like every other write here, though in practice the local
+        // human is always the room's only real peer and therefore always the authority.
+        public void ResetMatch()
+        {
+            if (!HasStateAuthority) return;
+            ScoreBlue = 0; ScoreRed = 0; Winner = -1; ByForfeit = false;
+            Kickoff();
+        }
+
         void Finish()
         {
             PhaseId = (int)Phase.Finished;
