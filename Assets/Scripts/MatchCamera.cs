@@ -63,6 +63,13 @@ namespace KongBall
         // the same instant rather than only the screen of whoever threw it.
         public void Shake(float intensity01) { _shake = Mathf.Max(_shake, Mathf.Clamp01(intensity01)); }
 
+        // Where the rig is actually LOOKING, not where the rig itself sits: the orbit arm holds the
+        // camera body ~backDistance away from its own target at all times, so a caller measuring
+        // distance to transform.position never sees a close hit as close — even the local player's
+        // own feet are always ~backDistance from the camera body. This is the point hit-proximity
+        // (shake intensity) should actually be measured against.
+        public Vector3 FocusPosition => _target != null ? _target.position + Vector3.up * lookHeight : transform.position;
+
         public void SetTarget(Transform player, Vector3 attackDir)
         {
             _target = player;
