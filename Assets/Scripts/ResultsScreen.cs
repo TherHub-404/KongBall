@@ -26,11 +26,19 @@ namespace KongBall
 
         System.Action _onMenu;
         GameObject _replayBtn;
+        Button _replayButton;
+        Text _replayText;
 
         // Idempotent, like MatchMenu.Show: NetLauncher calls this once per Finished phase, but a
         // second call (e.g. if it ever raced with something else) just refreshes who to call on MENU
-        // and whether RIGIOCA should show, instead of stacking a second screen.
-        public static void Show(System.Action onMenu, bool showReplay)
+        // and what the top button does, instead of stacking a second screen.
+        //
+        // onReplay is null to hide the top button entirely; otherwise it is shown with replayLabel
+        // and wired fresh to onReplay. Practice passes MatchController.ResetMatch under "RIGIOCA" —
+        // a real 1v1/2v2 match has no ResetMatch to call (there is no session to keep, only one to
+        // leave and rejoin), so NetLauncher passes a rematch action under "GIOCA ANCORA" instead: the
+        // "voglia di giocare di continuo" a real match had no cheap way to act on before this existed.
+        public static void Show(System.Action onMenu, System.Action onReplay, string replayLabel = "RIGIOCA")
         {
             if (_current == null)
             {
@@ -39,7 +47,18 @@ namespace KongBall
                 _current.Build();
             }
             _current._onMenu = onMenu;
-            if (_current._replayBtn != null) _current._replayBtn.SetActive(showReplay);
+            bool show = onReplay != null;
+            if (_current._replayBtn != null) _current._replayBtn.SetActive(show);
+            if (show)
+            {
+                if (_current._replayText != null) _current._replayText.text = replayLabel;
+                if (_current._replayButton != null)
+                {
+                    _current._replayButton.onClick.RemoveAllListeners();
+                    _current._replayButton.onClick.AddListener(UiSfx.Open);
+                    _current._replayButton.onClick.AddListener(() => onReplay());
+                }
+            }
         }
 
         public static void Hide()
@@ -93,10 +112,16 @@ namespace KongBall
                 }
             }
 
-            // RIGIOCA calls the same MatchController.ResetMatch() the corner RESET button does — this
-            // is that action given the prominence a "go again" choice deserves, not a second mechanism.
-            _replayBtn = Button(transform, "RIGIOCA", 0f, -100f, Primary,
-                                 () => { MatchController.Instance?.ResetMatch(); Hide(); });
+            // Built without a listener/final label — Show() wires both fresh every time, since
+            // which action and which word ("RIGIOCA" vs "GIOCA ANCORA") depends on the mode of the
+            // match that just ended, not on anything known at Build() time.
+            var hit = Ui.ToyButton("Btn_Replay", transform, 420f, 84f, Primary);
+            Ui.Place(hit.rectTransform, 0f, -100f, 420f, 84f);
+            _replayButton = hit.gameObject.AddComponent<Button>();
+            _replayButton.targetGraphic = hit;
+            _replayText = Ui.NewText("Text", hit.transform, 32);
+            if (_replayText != null) { _replayText.color = Color.white; Ui.Stretch(_replayText.rectTransform); }
+            _replayBtn = hit.gameObject;
 
             Button(transform, "MENU", 0f, -190f, Secondary,
                    () => { var m = _onMenu; _onMenu = null; m?.Invoke(); });

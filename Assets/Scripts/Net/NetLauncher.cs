@@ -113,6 +113,10 @@ namespace KongBall
         bool _leaving;                // shutdown asked for; stop driving the waiting screen
         bool _waitingShown;
         ConnectingScreen _screen;
+        // Set only by Rematch(), read once by OnShutdown once THIS leave completes, then cleared —
+        // carries "start this mode again" across the async Shutdown() the same way _notice already
+        // carries an error message across it.
+        MatchMode? _rematchMode;
 
         // Seconds left before giving up on the waiting room, or -1 when not waiting. Local on
         // purpose: it measures how long THIS player has been waiting, which is what runs out of
@@ -272,6 +276,16 @@ namespace KongBall
         public void Forfeit()
         {
             _notice = "HAI ABBANDONATO LA PARTITA";
+            LeaveMatch();
+        }
+
+        // "GIOCA ANCORA" on a real 1v1/2v2 result: there is no ResetMatch to fall back on (that only
+        // makes sense for the single-peer practice room this player isn't in), so the only path is
+        // leave properly and start fresh matchmaking in the same mode — same as tapping the mode
+        // button again from the menu, just without the detour through it.
+        public void Rematch()
+        {
+            _rematchMode = Mode;
             LeaveMatch();
         }
 
@@ -522,7 +536,11 @@ namespace KongBall
             if (_leaveAt <= 0f)
             {
                 _leaveAt = Time.time + postMatchSeconds;
-                ResultsScreen.Show(LeaveMatch, Mode == MatchMode.Practice);
+                bool practice = Mode == MatchMode.Practice;
+                if (practice)
+                    ResultsScreen.Show(LeaveMatch, () => { MatchController.Instance?.ResetMatch(); ResultsScreen.Hide(); });
+                else
+                    ResultsScreen.Show(LeaveMatch, Rematch, "GIOCA ANCORA");
                 return;
             }
             if (Time.time >= _leaveAt) { _leaveAt = 0f; LeaveMatch(); }
@@ -584,16 +602,23 @@ namespace KongBall
             _lastSeated = -1;
             if (_screen != null) { _screen.Hide(); _screen = null; }
 
+            // Read and cleared before anything below can return early — a rematch request must not
+            // survive into some LATER, unrelated shutdown (e.g. the next match's own ABBANDONA).
+            var rematch = _rematchMode;
+            _rematchMode = null;
+
             // Backdrop first: whatever we show next must not have the abandoned pitch behind it.
             MenuStage.Show();
 
             if (_notice != null)
             {
-                // Say why, rather than dropping the player on the menu with no explanation.
+                // Say why, rather than dropping the player on the menu with no explanation. Wins over
+                // a pending rematch: a dropped connection is more informative than silently retrying.
                 ConnectingScreen.Show(_notice).ShowError(_notice, MainMenu.Show);
                 _notice = null;
                 return;
             }
+            if (rematch.HasValue) { StartQuickMatch(rematch.Value); return; }
             MainMenu.Show();
         }
 

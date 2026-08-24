@@ -266,7 +266,15 @@ namespace KongBall
             if (_rend == null) return;
             Color c = (NetTeam == 1) ? RedColor : BlueColor;
             if (Runner != null && !StumbleUntil.ExpiredOrNotRunning(Runner)) c = Color.Lerp(c, Color.gray, 0.65f);
-            _rend.material.color = c;
+
+            // FallGuyBody carries three material slots (Skin, Eyes, Suit) — `_rend.material` (singular)
+            // only ever touches slot 0 (Skin). The suit (slot 2) was never recolouring, so a "blue"
+            // player kept the model's default dark-red suit patch — a real team-legibility bug in a
+            // team sport, not just cosmetic. Every slot gets tinted except Eyes: the character bible
+            // is explicit that eyes stay near-black regardless of anything else about the character.
+            foreach (var mat in _rend.materials)
+                if (mat != null && mat.name.IndexOf("Eyes", System.StringComparison.OrdinalIgnoreCase) < 0)
+                    mat.color = c;
         }
 
         public override void FixedUpdateNetwork()
