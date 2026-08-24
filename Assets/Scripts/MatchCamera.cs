@@ -41,11 +41,6 @@ namespace KongBall
         public float pitchMax = 72f;
         public float pitchDefault = 34f;
 
-        [Header("Hit feedback (screen shake)")]
-        [Tooltip("Not measured on a phone yet. Metres of jitter at full (1.0) intensity.")]
-        public float shakeAmplitude = 0.35f;
-        public float shakeDecay = 6f;
-
         [Header("Goal celebration zoom")]
         [Tooltip("Not measured on a phone yet — tune once someone can actually see it score a goal.")]
         public float goalZoomDistance = 4f;
@@ -56,19 +51,6 @@ namespace KongBall
         float _curYaw, _curPitch;    // smoothed angles actually applied
         LocalInputSource _input;     // the single local input source in the scene
         NetPlayer _scorer;           // resolved once per GoalPause, cleared when it ends
-        float _shake;                // 0..1, decays after a nearby hit
-
-        // Called from anywhere a hit happened — NetPlayer.Render, on every client, off the same
-        // replicated counter that drives the SFX, so a hit shakes every screen it is visible from at
-        // the same instant rather than only the screen of whoever threw it.
-        public void Shake(float intensity01) { _shake = Mathf.Max(_shake, Mathf.Clamp01(intensity01)); }
-
-        // Where the rig is actually LOOKING, not where the rig itself sits: the orbit arm holds the
-        // camera body ~backDistance away from its own target at all times, so a caller measuring
-        // distance to transform.position never sees a close hit as close — even the local player's
-        // own feet are always ~backDistance from the camera body. This is the point hit-proximity
-        // (shake intensity) should actually be measured against.
-        public Vector3 FocusPosition => _target != null ? _target.position + Vector3.up * lookHeight : transform.position;
 
         public void SetTarget(Transform player, Vector3 attackDir)
         {
@@ -159,15 +141,6 @@ namespace KongBall
             float piano = new Vector2(scarto.x, scarto.z).magnitude;
             if (scarto.magnitude < minDistance)
                 camPos.y = focus.y + Mathf.Sqrt(Mathf.Max(0f, minDistance * minDistance - piano * piano));
-
-            // Screen shake: a small random offset on top of the orbit position, decaying on its own
-            // clock rather than the orbit's smoothing — a shake that eased in over rotationLerp/
-            // followLerp seconds would not read as an impact.
-            if (_shake > 0.001f)
-            {
-                camPos += Random.insideUnitSphere * (shakeAmplitude * _shake);
-                _shake = Mathf.MoveTowards(_shake, 0f, shakeDecay * Time.deltaTime);
-            }
 
             if (instant)
                 transform.position = camPos;
