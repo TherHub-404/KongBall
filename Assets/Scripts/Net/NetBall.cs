@@ -130,11 +130,53 @@ namespace KongBall
                 };
             }
             SyncKinematic();
+            BuildDebugMarker();
         }
 
         public override void Despawned(NetworkRunner runner, bool hasState)
         {
             if (Instance == this) Instance = null;
+        }
+
+        // TEMPORARY diagnostic for the still-unsolved "two balls" report. Every static check so far
+        // has come back clean — one Spawn() call site in the whole codebase, one Visual/mesh on this
+        // prefab, no second reference to either ball model anywhere in the project, no ball-shaped
+        // geometry near the pitch centre in Arena.glb itself — so the next useful thing isn't another
+        // guess, it's a way to tell FROM A SCREENSHOT which of the two round shapes is the one this
+        // script actually tracks. A bright, impossible-to-confuse-with-anything-else marker hovering
+        // on THIS object only: if the next screenshot shows it on just one of the two balls, the other
+        // is confirmed to be a second, genuinely separate GameObject this class knows nothing about —
+        // which is new information no amount of further code-reading was going to produce. If it shows
+        // on both, they are the same object rendered twice, which points somewhere else entirely (a
+        // camera or render-layer duplication, not a spawned-object one).
+        //
+        // Remove this method, its call site above, and BallDebugMarker once the report is resolved.
+        void BuildDebugMarker()
+        {
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            mat.color = new Color(1f, 0f, 1f); // magenta — not a colour anything else on this pitch uses
+
+            var root = new GameObject("BallDebugMarker");
+            root.transform.SetParent(_visual != null ? _visual : transform, false);
+            root.transform.localPosition = Vector3.up * (radius * 2f);
+
+            // Three mutually perpendicular planes rather than one flat disc: the match camera sits
+            // at a shallow pitch (12-72 degrees, see MatchCamera), so a single horizontal quad would
+            // be seen nearly edge-on from most orbit angles and could itself go unnoticed. A quad's
+            // own face lies in its local XY plane by default — rotating that plane onto XZ and YZ in
+            // turn gives one face visible from any direction, which is the one thing this marker
+            // cannot afford to fail at.
+            Vector3[] faceEulers = { Vector3.zero, new Vector3(90f, 0f, 0f), new Vector3(0f, 90f, 0f) };
+            for (int i = 0; i < faceEulers.Length; i++)
+            {
+                var plane = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                plane.name = "Face" + i;
+                Destroy(plane.GetComponent<Collider>()); // decoration only, must not affect Hit/Bump ranges
+                plane.transform.SetParent(root.transform, false);
+                plane.transform.localScale = Vector3.one * 0.3f;
+                plane.transform.localRotation = Quaternion.Euler(faceEulers[i]);
+                plane.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            }
         }
 
         // Only the state authority runs the Rigidbody; others follow NetworkTransform.
