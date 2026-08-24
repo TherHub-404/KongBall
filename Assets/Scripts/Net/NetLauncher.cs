@@ -39,8 +39,9 @@ namespace KongBall
         public bool autoStart = false;
         public MatchMode autoStartMode = MatchMode.OneVsOne;
 
-        [Tooltip("Seconds on the result screen before returning to the menu.")]
-        public float postMatchSeconds = 6f;
+        [Tooltip("Safety net only: ResultsScreen shows immediately at Finished and MENU leaves on tap. " +
+                 "This is how long a player who put the phone down still gets pulled back to the menu.")]
+        public float postMatchSeconds = 30f;
 
         [Tooltip("How long to wait for the room to fill before giving up and going back to the menu. " +
                  "Restarts whenever somebody joins, so a room that is filling up is never abandoned.")]
@@ -287,6 +288,7 @@ namespace KongBall
         void TearDownRunner()
         {
             MatchMenu.Hide();
+            ResultsScreen.Hide();
             if (_runner == null) return;
             if (_runner.gameObject != null) Destroy(_runner.gameObject);
             _runner = null;
@@ -475,11 +477,25 @@ namespace KongBall
 
         // A finished match used to be a dead end: the phase stayed Finished and nothing else ever
         // happened. Each client leaves on its own clock — this is presentation, not shared state.
+        //
+        // ResultsScreen goes up the instant Finished is seen (the _leaveAt <= 0f branch runs exactly
+        // once per Finished phase); postMatchSeconds is only the fallback for a player who never taps
+        // MENU themselves.
         void WatchForMatchEnd()
         {
             var mc = MatchController.Instance;
-            if (mc == null || mc.CurPhase != MatchController.Phase.Finished) { _leaveAt = 0f; return; }
-            if (_leaveAt <= 0f) { _leaveAt = Time.time + postMatchSeconds; return; }
+            if (mc == null || mc.CurPhase != MatchController.Phase.Finished)
+            {
+                _leaveAt = 0f;
+                ResultsScreen.Hide();
+                return;
+            }
+            if (_leaveAt <= 0f)
+            {
+                _leaveAt = Time.time + postMatchSeconds;
+                ResultsScreen.Show(LeaveMatch, Mode == MatchMode.Practice);
+                return;
+            }
             if (Time.time >= _leaveAt) { _leaveAt = 0f; LeaveMatch(); }
         }
 
