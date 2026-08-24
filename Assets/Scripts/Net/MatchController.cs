@@ -271,6 +271,11 @@ namespace KongBall
         {
             if (!HasStateAuthority) return;
             ScoreBlue = 0; ScoreRed = 0; Winner = -1; ByForfeit = false;
+            // Without this, MatchTime stays at whatever it decayed to (often 0, from the very match
+            // this button is meant to restart) — Kickoff() below sets Phase back to Countdown, but
+            // the very next Playing tick would see MatchTime <= 0 and call Finish() again immediately.
+            // Reported as "the reset button doesn't work — if time's up, it's still over."
+            if (!endless) MatchTime = matchDuration;
             Kickoff();
         }
 

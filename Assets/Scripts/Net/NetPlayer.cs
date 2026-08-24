@@ -41,11 +41,14 @@ namespace KongBall
         [Tooltip("Replaces push/grab entirely: with the ball never possessed, this is now the only way " +
                  "to affect an opponent, and the strong way to hit the ball. One per jump — landing " +
                  "resets it, so it can't be chained in the air.")]
-        public float spinLungeSpeed = 9f;
+        public float spinLungeSpeed = 11f;
         public float spinDuration = 0.35f;
         public float spinHitRange = 1.8f;
         public float spinBallPowerMultiplier = 1.6f;
         public float spinCooldown = 1f;
+        [Tooltip("The attacker's own landing recovery, every time a spin attack ends (hit or miss) — " +
+                 "committing to a flying kick costs balance, not just a free hit.")]
+        public float spinRecoveryDuration = 1f;
 
         [Header("Knockback (dealt by the spin attack)")]
         public float pushRange = 1.7f;
@@ -362,7 +365,14 @@ namespace KongBall
             CollisionFlags flags = _cc.Move(motion);
             _grounded = (flags & CollisionFlags.Below) != 0 || _cc.isGrounded;
 
-            if (_spinFor > 0f) ResolveSpin(dt);
+            if (_spinFor > 0f)
+            {
+                ResolveSpin(dt);
+                // The exact tick the spin attack ends, hit or miss: the flying kick costs balance
+                // either way, not just when it connects — the attacker falls too, same as a target
+                // knocked down by it, just on a fixed timer instead of a travel direction.
+                if (_spinFor <= 0f) StumbleUntil = TickTimer.CreateFromSeconds(Runner, spinRecoveryDuration);
+            }
             else HandleBall(want);
         }
 
@@ -398,18 +408,23 @@ namespace KongBall
             return _input != null && _input.ConsumeJump();
         }
 
-        // Contextual ACTION, and it is now a SMALL contract: the ball is never possessed, so ACTION
-        // hits it when it's close enough, and otherwise does nothing on the ground at all. Affecting
-        // an opponent — or hitting the ball harder — is the spin attack's job now, not ACTION's.
+        // Contextual ACTION. Phone-test feedback: this used to do literally nothing when the ball
+        // wasn't close — "the punch has to always work, not just when the ball's in front of you; if
+        // you happen to catch the ball, you move it." So the punch itself always plays on a valid
+        // press; whether it also moves the ball is just a question of whether it was close enough.
         void HandleBall(PlayerIntent want)
         {
             bool action = want.Action;
-            bool ballClose = Ball != null && Vector3.Distance(transform.position, Ball.transform.position) <= hitRange;
 
-            if (ballClose && action && !_prevAction && _hitCd.ExpiredOrNotRunning(Runner))
+            if (action && !_prevAction && _hitCd.ExpiredOrNotRunning(Runner))
             {
-                Vector3 dir = want.Move.sqrMagnitude > 0.01f ? want.Move.normalized : FlatForward();
-                Hit(dir, 1f);
+                bool ballClose = Ball != null && Vector3.Distance(transform.position, Ball.transform.position) <= hitRange;
+                if (ballClose)
+                {
+                    Vector3 dir = want.Move.sqrMagnitude > 0.01f ? want.Move.normalized : FlatForward();
+                    ApplyBallImpulse(dir, 1f);
+                }
+                KickSeq++; // the punch animation, on every client, whether or not it touched anything
                 _hitCd = TickTimer.CreateFromSeconds(Runner, hitCooldown);
             }
 
@@ -447,29 +462,37 @@ namespace KongBall
             var target = FindTargetInFront();
             if (target != null)
             {
-                Vector3 dir = target.transform.position - transform.position; dir.y = 0f;
-                target.RPC_Push(dir, pushForce);
+                // _spinDir, not the position difference: the attacker's own committed lunge direction
+                // is always well-defined, where target.position - transform.position can go near-zero
+                // (and so an unreliable direction) the moment the two colliders overlap — reported as
+                // the knockdown sometimes firing in an inconsistent direction. This also means the
+                // target always falls further along the kick's own line, not off to whatever side it
+                // happened to be standing on.
+                target.RPC_Push(_spinDir, pushForce);
                 _spinFor = 0f;
             }
         }
 
-        // The impulse is applied by the ball's authority; the animation and SFX fire here immediately
-        // (KickSeq is on MY object, so that write is authoritative and instant). powerMultiplier is
-        // 1 for a normal ACTION hit, higher for a spin attack that connects — same fundamental path,
-        // never a second ball-physics system for the "harder" version.
-        //
-        // Two ways to reach the same authority-side method. A remote player has to ask over the wire;
-        // whoever is ALREADY the ball's authority — every bot, since bots exist only on the master —
-        // calls it directly, because an RPC to oneself is a message with nothing to carry, and
-        // RPC_Hit resolves the SENDER, which for a bot would resolve to the master's own avatar.
-        void Hit(Vector3 dir, float powerMultiplier)
+        // The impulse is applied by the ball's authority. Two ways to reach the same authority-side
+        // method. A remote player has to ask over the wire; whoever is ALREADY the ball's authority —
+        // every bot, since bots exist only on the master — calls it directly, because an RPC to
+        // oneself is a message with nothing to carry, and RPC_Hit resolves the SENDER, which for a
+        // bot would resolve to the master's own avatar.
+        void ApplyBallImpulse(Vector3 dir, float powerMultiplier)
         {
             var ball = Ball;
             if (ball == null) return;
 
             if (ball.Object != null && ball.Object.HasStateAuthority) ball.Hit(this, dir, powerMultiplier);
             else ball.RPC_Hit(dir, powerMultiplier);
+        }
 
+        // The spin attack's own ball-hit path: unlike ACTION (HandleBall), which now always plays its
+        // animation and only sometimes touches the ball, connecting IS the spin attack's one event —
+        // there is no "swung and missed" animation for it yet, so the two stay bundled here.
+        void Hit(Vector3 dir, float powerMultiplier)
+        {
+            ApplyBallImpulse(dir, powerMultiplier);
             KickSeq++; // triggers the hit animation on all clients
         }
 
@@ -566,9 +589,13 @@ namespace KongBall
         public void RPC_Push(Vector3 dir, float force)
         {
             dir.y = 0f;
-            if (dir.sqrMagnitude > 1e-4f) dir.Normalize();
+            if (dir.sqrMagnitude > 1e-4f) dir.Normalize(); else dir = FlatForward();
             _horizVel = dir * force;
             if (_vY < 2f) _vY = 2f; // small pop
+            // "stumble" falls backward relative to local forward (see RigAnimator) — face away from
+            // the push so that backward, in world space, lines up with the direction actually being
+            // knocked in, instead of falling however it happened to already be facing.
+            transform.rotation = Quaternion.LookRotation(-dir, Vector3.up);
             StumbleUntil = TickTimer.CreateFromSeconds(Runner, stunDuration);
         }
     }

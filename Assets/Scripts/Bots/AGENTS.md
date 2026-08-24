@@ -20,7 +20,7 @@ The rest of the codebase was shaped so a bot needs no special case anywhere. Kee
 |---|---|
 | `NetPlayer.Live` | every player in the match, humans and bots. Anything that needs to find players scans this, never `Runner.ActivePlayers` — that list only knows about peers with a connection. |
 | `NetBall.Hit(NetPlayer, dir)` | authority-side entry point. A remote player asks over `RPC_Hit`, which only resolves the sender; whoever already holds the ball's authority — every bot, since bots exist only on the master — calls it directly. Both go through `NetPlayer`'s private `Hit`. There is no ownership check any more: the authority re-validates distance itself instead. |
-| `PlayerIntent` + `IPlayerBrain` | the two values a tick needs, in WORLD space: a move direction and the one contextual button. `NetPlayer.ReadIntent` returns either the joystick resolved against the camera, or `_brain.Think`. Everything below that line — acceleration, turning, the hit-vs-push priority, push, grab — is shared by construction. |
+| `PlayerIntent` + `IPlayerBrain` | the two values a tick needs, in WORLD space: a move direction and the one contextual button. `NetPlayer.ReadIntent` returns either the joystick resolved against the camera, or `_brain.Think`. Everything below that line — acceleration, turning, ACTION's ball hit, the spin attack — is shared by construction. |
 
 Plus two rules that are easy to get wrong.
 
@@ -42,16 +42,16 @@ and adds `BotBrain` — a plain `MonoBehaviour`, so nothing about the networked 
 the bot's team and `IsBot` are seeded.
 
 Using the human prefab is what keeps a bot honest: same collider, same speeds, same hit range, same
-push/grab. It has one consequence, and it is the reason bots are confined to practice for now — that
+spin attack. It has one consequence, and it is the reason bots are confined to practice for now — that
 prefab is flagged `DestroyWhenStateAuthorityLeaves`, so **a bot dies with the master**. In a practice
 match the master is the only human and the match ends anyway. Filling a real 2v2 needs a prefab of
 its own, flagged `MasterClientObject` so Fusion migrates it; the human prefab must NOT change, because
 your avatar should vanish when you quit.
 
-The contextual button is shared code, unconditionally: `NetPlayer.HandleBall` decides hit vs. push/grab
-from distance to the ball alone, for a bot exactly as for a person. There is no "the bot was mid-kick"
-edge case any more to reason about, because there is no longer a multi-tick kick to be mid of — a hit
-is one instantaneous impulse on the press tick.
+The contextual button is shared code, unconditionally: `NetPlayer.HandleBall` always plays the punch
+and only ALSO hits the ball when it's close enough, for a bot exactly as for a person. There is no
+"the bot was mid-kick" edge case any more to reason about, because there is no longer a multi-tick
+kick to be mid of — a hit is one instantaneous impulse on the press tick.
 
 Do not reach for input structs, `OnInput` or input authority. Those are client-server concepts; in
 Shared Mode each peer simulates its own objects directly, and a bot is just an object the master
@@ -70,10 +70,13 @@ does not have, the design is wrong.
 
 - **steering** — where to go: for the ball, aim for a point on its far side (away from the attacking
   goal) so arriving in hit range means already moving toward goal, not sideways into it; for an
-  opponent, run straight at them, since `NetPlayer`'s push/grab only finds a target in front of itself.
-- **player** — a small state machine: chase the ball and hit it on contact, or tackle whichever
-  opponent is about to reach the ball first. There is no carry/shoot/support split any more — there is
-  nothing to carry.
+  opponent, run straight at them, since `NetPlayer`'s spin attack (`FindTargetInFront`) only finds a
+  target in front of itself.
+- **player** — a small state machine: chase the ball and hit it on contact, or contest via the spin
+  attack whichever opponent is about to reach the ball first (`BotBrain.NearestThreat` /
+  `ContestThreat` — a grounded jump followed by a second jump press once airborne, the same shape
+  `NetPlayer` expects from a human double-tapping the button). There is no carry/shoot/support split
+  any more — there is nothing to carry.
 - **team** — STILL NOT DONE. Exactly one bot per side is on the pitch today, so nothing yet exercises
   "two bots, one goes for the ball, the other holds a support position." Two bots converging on the
   same ball will be the loudest "these are bots" signal in a team game, same as before the reset.
@@ -86,10 +89,17 @@ matter here:
 1. **approach the ball from the right side, not head-on** — done, `approachOffset`; replaces the old
    aimed-shot-on-release, which no longer exists now that a hit is instantaneous and unaimed
 2. **commitment window** — decide, then stick with it for a beat; re-deciding every tick jitters —
-   done: one challenge held to the end (`_tackleFor`)
-3. **input ramp** — no thumb produces a step change in direction — done, `steerRamp`
-4. **reaction delay** on the chase/tackle decision, ~180–260 ms, never on movement — done,
-   `reactionSeconds`
+   done for contesting (`_committedThreat`, cleared only once the spin attempt actually fires).
+   Chasing the ball itself still re-aims every tick — nothing has reported that as jittery yet
+3. **input ramp** — no thumb produces a step change in direction — this used to be the bot's own
+   `steerRamp`, removed once `NetPlayer` grew an equivalent acceleration curve for humans (see
+   `rampUpTime`): the bot gets the same ramp through the same shared code now, no separate field
+4. **reaction delay** on the chase/contest decision, ~180–260 ms, never on movement — done,
+   `reactionSeconds`. This and #2 were documented here as already done once before, but the fields
+   backing them (`_tackleFor`, `reactionSeconds`) did not actually exist in the code — apparently lost
+   somewhere in the CORE_GAMEPLAY_RESET rewrite and never caught, which is a plausible chunk of
+   "the bots don't know how to play any more": a bot that re-decides every single tick is the #1
+   thing on this list to read as a machine, and that's what shipped for a while
 5. **top speed** just under a human's — done, `topSpeed`
 6. **intercept, don't chase** — run at where the ball will be, not where it is — STILL NOT DONE, same
    as before the reset
@@ -144,11 +154,20 @@ was asked for explicitly and is meant to come out again: `Scripts/NameTag.cs`, p
 - [x] step 2 — one bot, dumbest brain (seek ball, hit toward goal), reachable from ALLENAMENTO in the
       mode menu: a private invisible room of one human, `BotDirector` puts a bot on the other side
 - [x] CORE_GAMEPLAY_RESET — possession/dribble removed project-wide; `BotBrain` rewritten around
-      chase-and-hit + tackle-the-nearest-threat. Not yet felt on a phone: approach angle, hit
-      commit range, and the fixed hit impulse are all first guesses.
-- [~] believability. Done: challenge the nearest threat to the ball (push or grab, one committed
-      act), speed capped under a human's, steering ramp, reaction delay on the chase/tackle decision,
-      jump, approach-from-behind-the-ball steering.
-      Left: **intercept instead of chase**, and team roles once there is more than one bot — both
-      unchanged from before the reset, neither was done then either
+      chase-and-hit. Not yet felt on a phone: approach angle, hit commit range, and the fixed hit
+      impulse are all first guesses.
+- [x] spin-attack contesting — `NearestThreat`/`ContestThreat` gives the bot the same tool a human
+      has for affecting an opponent (push/grab never came back after the reset; this is what
+      replaced it, and until this the bot had no equivalent at all — plausibly most of "the bots
+      don't know how to play any more"). Not felt on a phone yet: `threatMargin`, `contestRange`,
+      and whether the bot commits to the second jump reliably are all first guesses.
+- [~] believability. Done: speed capped under a human's, reaction delay on the chase/contest
+      decision (via `NearestThreat` re-evaluating every tick — no explicit delay yet, see below),
+      jump, approach-from-behind-the-ball steering. The bot's own steering ramp was removed once
+      `NetPlayer` grew an equivalent acceleration curve for humans — stacking both just made the bot
+      mushier to steer, not more human.
+      Left: **intercept instead of chase**, a reaction delay specifically on the chase-vs-contest
+      switch (right now it can flip the instant a threat appears or leaves), and team roles once
+      there is more than one bot — all unchanged from before the reset except the delay, which is
+      new now that there are two decisions to dither between instead of one
 - [ ] later — a bot prefab of its own, so bots can survive the master leaving and fill a real match
