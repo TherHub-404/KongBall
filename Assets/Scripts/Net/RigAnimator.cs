@@ -49,6 +49,13 @@ namespace KongBall
                  "without touching the other")]
         public float airThreshold = 1.3f;
         public float runRefSpeed = 6f;
+        [Tooltip("Smooths the position-delta velocity estimate before anything reads it. The player's " +
+                 "transform only actually changes once per Fusion network tick, not once per render " +
+                 "frame — on a device whose framerate outruns the tick rate, most frames see zero " +
+                 "delta and the tick frame sees the whole tick's motion at once. Read raw, that made " +
+                 "hSpeed flicker between 0 and a spike often enough to flip the walk/run crossfade " +
+                 "back and forth every few frames — reported as running looking stuttery.")]
+        public float velocitySmoothing = 18f;
         [Tooltip("Fraction of runRefSpeed above which \"run\" plays instead of \"walk\" — below the " +
                  "0.15 idle threshold nothing plays, between that and this it's walk, above it run. " +
                  "Lorenzo: one animation for every speed read wrong — a slow build-up should look " +
@@ -83,6 +90,7 @@ namespace KongBall
         bool _baseScaleCaptured;
         bool _prevAirborne;
         float _squashT = -1f;   // seconds since the last landing; -1 = inactive
+        Vector3 _smoothedVel;
 
         void Awake()
         {
@@ -139,8 +147,10 @@ namespace KongBall
             if (!_baseScaleCaptured) { _baseScale = transform.localScale; _baseScaleCaptured = true; }
 
             Vector3 pos = _player.transform.position;
-            Vector3 vel = (pos - _lastPos) / dt;
+            Vector3 rawVel = (pos - _lastPos) / dt;
             _lastPos = pos;
+            _smoothedVel = Vector3.Lerp(_smoothedVel, rawVel, 1f - Mathf.Exp(-velocitySmoothing * dt));
+            Vector3 vel = _smoothedVel;
 
             float hSpeed = new Vector2(vel.x, vel.z).magnitude;
             bool airborne = Mathf.Abs(vel.y) > airThreshold;
@@ -205,6 +215,20 @@ namespace KongBall
         {
             if (state == _current) return;
             if (!_slotOf.ContainsKey(state)) return;
+
+            // Landing from your OWN spin attack: NetPlayer.FixedUpdateNetwork puts the attacker into
+            // "stumble" the instant the spin ends, hit or miss (spinRecoveryDuration) — but they are
+            // already leaning into the lunge, not standing. Starting "stumble" from its own frame 0
+            // (upright) made them visibly snap upright for an instant before its own fall animation
+            // played — reported as "si rialza e si risdraia" (stands up, then lies back down).
+            // Jumping the clip's own playback time to right where its fall+hold ends and the rise
+            // begins skips that pop: reads as already down, then rises slowly same as always.
+            if (state == "stumble" && _current == "spin" && _slotOf.TryGetValue("stumble", out int stumbleSlot))
+            {
+                var clip = clips[stumbleSlot].clip;
+                if (clip != null) _clipPlayables[stumbleSlot].SetTime(clip.length * 0.5);
+            }
+
             _current = state;
         }
     }
