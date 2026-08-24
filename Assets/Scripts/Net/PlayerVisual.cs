@@ -9,7 +9,9 @@ namespace KongBall
     // loads Menu/Monkey through Resources instead of a scene reference.
     public class PlayerVisual : MonoBehaviour
     {
-        static readonly string[] LoopStates = { "idle", "run", "fall", "stumble", "spin" };
+        // "stumble" plays once — a fall-backward-then-get-up clip timed to NetPlayer.stunDuration —
+        // not a continuous loop, so it can hold its final (standing) pose until IsStumbled clears.
+        static readonly string[] LoopStates = { "idle", "run", "fall", "spin" };
 
         void Awake()
         {
