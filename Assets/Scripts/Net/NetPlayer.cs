@@ -28,14 +28,6 @@ namespace KongBall
         public float fallMultiplier = 1.7f;
         public float coyoteTime = 0.12f;
         public float jumpBufferTime = 0.12f;
-        [Tooltip("Phone-test feedback: jump was spammable. Each ground jump adds a fatigue stack, down " +
-                 "to jumpFatigueMinMul at jumpFatigueMaxStacks. Stacks decay one at a time for every " +
-                 "jumpFatigueRecover seconds spent NOT jumping — not an all-or-nothing reset at that " +
-                 "mark, which needed one full clean 0.75s+ gap to recover at all and, short of that, " +
-                 "read as permanently stuck weak no matter how long you'd actually waited.")]
-        public int jumpFatigueMaxStacks = 3;
-        public float jumpFatigueMinMul = 0.4f;
-        public float jumpFatigueRecover = 0.75f;
 
         [Header("Hit (ACTION on the ball)")]
         [Tooltip("How close the ball has to be for ACTION to hit it. Out of this range, ACTION does " +
@@ -126,8 +118,6 @@ namespace KongBall
         float _jumpBuf;      // jump buffer timer
         bool _grounded;
         float _accelT;              // seconds spent accelerating in the current held direction
-        int _jumpFatigueStacks;     // consecutive ground jumps without a full rest
-        float _timeSinceLastJump = 999f;   // large at spawn: the very first jump is always full power
 
         static readonly Color BlueColor = new Color(0.20f, 0.55f, 1.00f);
         static readonly Color RedColor = new Color(1.00f, 0.30f, 0.25f);
@@ -354,22 +344,10 @@ namespace KongBall
             if (jumpPressed) _jumpBuf = jumpBufferTime;
             _jumpBuf -= dt;
             _coyote = _grounded ? coyoteTime : _coyote - dt;
-            _timeSinceLastJump += dt;
             bool canGroundJump = _jumpBuf > 0f && _coyote > 0f;
             if (canGroundJump)
             {
-                // Anti-spam, from a phone test: full power on the first jump, weaker on each one that
-                // follows too soon, down to jumpFatigueMinMul by jumpFatigueMaxStacks — bunny-hopping
-                // tires the legs out. Decays gradually (one stack per jumpFatigueRecover seconds of
-                // rest) rather than needing one unbroken jumpFatigueRecover-second gap to reset at
-                // all, so waiting always helps instead of the jump staying at minimum until a single
-                // clean window happens to line up.
-                int decayed = Mathf.FloorToInt(_timeSinceLastJump / jumpFatigueRecover);
-                if (decayed > 0) _jumpFatigueStacks = Mathf.Max(0, _jumpFatigueStacks - decayed);
-                float fatigueMul = Mathf.Lerp(1f, jumpFatigueMinMul, (float)_jumpFatigueStacks / jumpFatigueMaxStacks);
-                _vY = jumpVelocity * fatigueMul;
-                _jumpFatigueStacks = Mathf.Min(_jumpFatigueStacks + 1, jumpFatigueMaxStacks);
-                _timeSinceLastJump = 0f;
+                _vY = jumpVelocity;
                 _jumpBuf = 0f; _coyote = 0f; _grounded = false;
             }
             else if (jumpPressed && !_grounded && !_usedSpin && _spinCd.ExpiredOrNotRunning(Runner))
@@ -567,7 +545,7 @@ namespace KongBall
             _horizVel = Vector3.zero; _vY = 0f;
             _grounded = false;   // let the next tick re-detect it instead of assuming the old value
             _usedSpin = false; _spinFor = 0f;
-            _accelT = 0f; _jumpFatigueStacks = 0; _timeSinceLastJump = 999f;
+            _accelT = 0f;
             StumbleUntil = default;
         }
 
