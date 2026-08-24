@@ -1,5 +1,6 @@
 using Fusion;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace KongBall
 {
@@ -75,8 +76,21 @@ namespace KongBall
         Vector3 _visualBaseLocal;
         Vector3 CentringOffset => _visual != null ? transform.TransformVector(_visualBaseLocal) : Vector3.zero;
 
+        // TEMPORARY debug scaffolding, same spirit as the "BOT n" nametag (Scripts/NameTag.cs,
+        // Bots/AGENTS.md) — meant to come out again once the "two balls in allenamento" report is
+        // actually pinned down. Every NetBall.Spawned() call, on every client, bumps this and repaints
+        // a small on-screen counter, so a real device (no console attached) can show, by itself,
+        // whether this is truly a second NetworkObject spawning (count reaches 2+) or something else
+        // entirely (visual/rendering, count stays 1). To remove: this field, ShowSpawnDebug(), and its
+        // two call sites below.
+        static int _spawnCount;
+        static Text _spawnDebugLabel;
+
         public override void Spawned()
         {
+            _spawnCount++;
+            ShowSpawnDebug();
+
             // Two balls can briefly coexist: a client that becomes master before the room's existing
             // ball has replicated to it sees no ball and spawns one. Resolve it deterministically —
             // lowest NetworkId survives, so every client independently picks the same one — and let
@@ -87,7 +101,8 @@ namespace KongBall
                 var loser = iAmOlder ? Instance : this;
                 Instance = iAmOlder ? this : Instance;
 
-                Debug.LogWarning("[Net] duplicate ball detected, dropping " + loser.Object.Id);
+                Debug.LogWarning("[Net] duplicate ball detected (" + Object.Id + " vs " + Instance.Object.Id
+                    + "), dropping " + loser.Object.Id + " — spawn #" + _spawnCount + " this session");
                 if (loser.Object != null && loser.Object.HasStateAuthority)
                     Runner.Despawn(loser.Object);
 
@@ -124,6 +139,10 @@ namespace KongBall
 
         public override void Despawned(NetworkRunner runner, bool hasState)
         {
+            // Same temporary debug scaffolding as Spawned()'s counter: whether a duplicate actually
+            // gets despawned (vs. just detected and left sitting there) is exactly the kind of thing
+            // that's obvious from a log and invisible from reading the code that's supposed to do it.
+            Debug.Log("[Net] ball despawned: " + Object.Id + (Instance == this ? " (was Instance)" : ""));
             if (Instance == this) Instance = null;
         }
 
@@ -295,5 +314,30 @@ namespace KongBall
         }
 
         static float FlatDist(Vector3 a, Vector3 b) { a.y = 0f; b.y = 0f; return Vector3.Distance(a, b); }
+
+        // See the field comments above — temporary, remove together with _spawnCount/_spawnDebugLabel
+        // once the duplicate-ball report is pinned down. Top-right, but below where it would collide
+        // with MatchMenu's practice-only RESET button (same corner, sizeDelta 104x60 at -26,-26).
+        static void ShowSpawnDebug()
+        {
+            if (_spawnDebugLabel == null)
+            {
+                var go = new GameObject("BallSpawnDebug");
+                UnityEngine.Object.DontDestroyOnLoad(go);
+                Ui.NewOverlayCanvas(go, 4800);
+                _spawnDebugLabel = Ui.NewText("Count", go.transform, 22);
+                if (_spawnDebugLabel != null)
+                {
+                    _spawnDebugLabel.color = Color.yellow;
+                    _spawnDebugLabel.alignment = TextAnchor.UpperRight;
+                    var rt = _spawnDebugLabel.rectTransform;
+                    rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
+                    rt.pivot = new Vector2(1f, 1f);
+                    rt.sizeDelta = new Vector2(520f, 44f);
+                    rt.anchoredPosition = new Vector2(-26f, -96f);
+                }
+            }
+            if (_spawnDebugLabel != null) _spawnDebugLabel.text = "BALL SPAWNS: " + _spawnCount;
+        }
     }
 }
