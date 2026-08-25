@@ -91,6 +91,9 @@ namespace KongBall
         bool _prevAirborne;
         float _squashT = -1f;   // seconds since the last landing; -1 = inactive
         Vector3 _smoothedVel;
+        bool _recentlySpun;     // this player's OWN IsSpinning was seen true, not grounded since
+        float _hitHoldT;        // seconds still owed to "hit" once triggered, win or lose the race
+                                 // against whatever movement/other state would otherwise take over
 
         void Awake()
         {
@@ -177,15 +180,39 @@ namespace KongBall
             var mc = MatchController.Instance;
             // Same replicated state MatchCamera already zooms in on during GoalPause (LastScorerId),
             // read here too so the scorer's own dance plays identically on every client — nobody
-            // decides locally who gets to celebrate. Below hit/stumble/spin on purpose: whichever of
-            // those is still resolving (the very hit that scored, or a stumble landed a heartbeat
-            // before) gets to finish before the celebration takes over, not cut off by it.
+            // decides locally who gets to celebrate.
             bool celebrating = mc != null && mc.CurPhase == MatchController.Phase.GoalPause
                                 && mc.LastScorerId == _player.NetId;
 
-            if (_player.KickSeq != _lastKickSeq) { _lastKickSeq = _player.KickSeq; CrossFadeTo("hit"); }
+            // The attacker's own self-recovery stumble (NetPlayer's spinRecoveryDuration) starts the
+            // instant the spin's 0.4s hit window ends — which, mid-jump, is often still well before
+            // they actually land. "stumble" is a lying-on-the-ground pose; showing it while the
+            // character is visibly still a metre up in the air read as two disconnected animations
+            // (jump, then an unrelated fall) instead of one committed dive — reported as "salta e poi
+            // cade dopo invece di essere una cosa unica". _recentlySpun is set only by THIS player's
+            // own IsSpinning (never by being on the receiving end of someone else's), so a knocked-
+            // back target still gets "stumble" immediately as before — only the attacker's own dive
+            // gets held until they are actually back on the ground.
+            if (_player.IsSpinning) _recentlySpun = true;
+            if (!airborne) _recentlySpun = false;
+            bool spinPose = _player.IsSpinning || (_recentlySpun && airborne);
+
+            // "hit" used to be current for a single frame if the player kept moving while punching —
+            // KickSeq only differs from _lastKickSeq on the exact tick it changes, so a player still
+            // holding a run direction fell straight through to "run" on the very next frame, and the
+            // punch barely got to blend in before being crossfaded back out. Holding it for its own
+            // real-world duration (clip length over its slowed-down playback speed) regardless of
+            // movement is what actually lets it play — reported as "il pugno non è ancora animato bene".
+            if (_player.KickSeq != _lastKickSeq)
+            {
+                _lastKickSeq = _player.KickSeq;
+                if (_slotOf.TryGetValue("hit", out int hitSlot) && clips[hitSlot].clip != null)
+                    _hitHoldT = clips[hitSlot].clip.length / Mathf.Max(0.01f, clips[hitSlot].speed);
+                CrossFadeTo("hit");
+            }
+            else if (spinPose) CrossFadeTo("spin");
             else if (_player.IsStumbled) CrossFadeTo("stumble");
-            else if (_player.IsSpinning) CrossFadeTo("spin");
+            else if (_hitHoldT > 0f) { _hitHoldT -= dt; CrossFadeTo("hit"); }
             else if (celebrating) CrossFadeTo("celebrate");
             else if (airborne) CrossFadeTo(vel.y > 0f ? "jump" : "fall");
             else if (hSpeed > runRefSpeed * runCrossoverFraction) CrossFadeTo("run");
