@@ -203,6 +203,19 @@ namespace KongBall
         {
             if (_runner != null) return;
 
+            // A ball (or MatchController) from a PREVIOUS session can survive its runner's shutdown as
+            // an orphan — verified in Fusion.Runtime.xml: Despawn(NetworkObject) throws when "the
+            // NetworkObject does not belong to this runner", so an object left behind by a runner that
+            // is already gone by the time cleanup runs cannot be reached through Fusion at all, not by
+            // this class and not by NetBall's own dedup (which only ever compares against the CURRENT
+            // NetBall.Instance, and has no way to know an untracked leftover exists). It just sits
+            // there, still fully rendered, silently un-networked. Reported as "restart training, now
+            // there are two balls" — one fresh, one frozen leftover, confirmed as a genuinely separate
+            // GameObject by the BallDebugMarker in NetBall (present on only one of the two on a phone).
+            // Swept here, once, before anything new spawns: whatever the exact shutdown race is that
+            // leaves it behind, a clean scene at the start of every session doesn't need to know.
+            CleanupOrphanedMatchObjects();
+
             // The runner lives on its own GameObject so that shutting it down cannot take this
             // launcher with it — we need to survive a match to get back to the menu.
             var host = new GameObject("NetworkRunner");
@@ -326,6 +339,30 @@ namespace KongBall
             foreach (var obj in _orphanScratch)
                 if (obj != null && obj.HasStateAuthority) runner.Despawn(obj);
             _orphanScratch.Clear();
+        }
+
+        // Belt-and-suspenders for DespawnOwned above: that one only ever sees what THIS runner still
+        // believes it owns, which is exactly what a leftover from an already-gone runner is not — by
+        // definition, Fusion has stopped tracking it. FindObjectsByType goes around Fusion entirely and
+        // asks Unity directly "does anything with this component still exist in the scene", which is
+        // the one question that does not care which runner, if any, an object thinks it belongs to.
+        // Plain Destroy(), not Runner.Despawn(): there is no live simulation left to ask, and Despawn()
+        // on an object that "does not belong to this runner" is documented (Fusion.Runtime.xml) to
+        // throw rather than quietly no-op.
+        static void CleanupOrphanedMatchObjects()
+        {
+            foreach (var ball in FindObjectsByType<NetBall>(FindObjectsSortMode.None))
+            {
+                if (ball == null) continue;
+                Debug.LogWarning("[Net] destroying orphaned ball left over from a previous session");
+                Destroy(ball.gameObject);
+            }
+            foreach (var mc in FindObjectsByType<MatchController>(FindObjectsSortMode.None))
+            {
+                if (mc == null) continue;
+                Debug.LogWarning("[Net] destroying orphaned MatchController left over from a previous session");
+                Destroy(mc.gameObject);
+            }
         }
 
         void TearDownRunner()
